@@ -69,6 +69,26 @@ One per agent — «review this diff» produces prose. Pick 3–5 that match:
 When the confirm rate approaches 100 %, the skeptics have stopped filtering:
 trim the fan-out and spend it on lenses.
 
+## A reviewer that is not your model
+
+«Someone who did not do the work» is satisfied by a subagent, and that is the
+default because it is free with the session and can be handed tools. But a
+subagent of the same model shares the author's priors — it is the same reader
+with a different prompt. For the claim you most want to be wrong about, spend
+one command on a referee from another family:
+
+```bash
+codex exec --sandbox read-only "Read <file>. Its claim is <X>. Try to refute it. Concrete invocations only."
+gemini -p "…the same prompt…"
+```
+
+Read-only is not optional here either, and it is a FLAG, not a request: an
+external CLI has its own permission model and its own idea of «helpful».
+
+What it costs: another vendor's quota, and an answer that arrives as prose
+rather than as a structured finding. What it buys: the failure mode where every
+reviewer agrees because every reviewer is the same reader.
+
 ## The two cheapest agents, which return the most
 
 **Convergence analyst**, every third round — told to COUNT, not search:

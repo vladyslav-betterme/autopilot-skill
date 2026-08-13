@@ -8,11 +8,21 @@ Count **per area**. A falling total hides one area getting worse.
 
 ## The distribution
 
-| Cause | Count | Trend |
+Round 1 of review (2026-08-13, `docs/reviews/2026-08-13.md`) is the first data
+point. «Trend» needs two rounds to mean anything and says so rather than
+inventing a direction.
+
+| Cause | R1 | Trend |
 |---|---:|---|
-| A composed chain whose short-circuit swallows the payload | 1 | new |
-| A discovered value hardcoded at the second call site | 1 | new |
-| A destructive write reachable through an argument | 1 | caught before landing |
+| **A permissive parser accepts what it should refuse** — an unknown flag ignored, `--times=3` not matching `--times`, `--dir /opt/x`, a TOML path taking a JSON write | 5 | first round |
+| **An error swallowed into silence, which then reads as absence or success** — a config parse error into `null` and then over the file, an unreadable config as «no MCP here», a failed record throwing past the verdict | 4 | first round |
+| **A guard whose true-positive set is inputs that were already safe** — the shell-token check | 1 | first round |
+| **A scope taken from `cwd` when the thing being scoped is the project** — STOP invisible from a subdirectory | 1 | first round |
+| **Two lists answering one question** — election vs search for the ledger home | 1 | first round (this repo's most-repeated cause across its whole history) |
+| **A composed chain whose short-circuit swallows the payload** | 1 | first round |
+| **`process.exit` before stdout has drained** | 1 | first round |
+| **A discovered value hardcoded at the second call site** | 1 | first round |
+| **A document stating as an invariant what was never checked** | 8 claims | first round |
 
 ## Patterns
 
@@ -54,3 +64,26 @@ the refusal is pinned by a test that asserts the TOML is still intact.
 
 **The tell:** a flag whose value is a path you will WRITE, and you only validated
 what you write, not where.
+
+### A permissive parser accepts what it should refuse — the largest class
+
+Five separate defects, one shape. `--times=3` did not match `flags.includes('--times')`,
+so it ran once and the flakiness guard could never fire; `--recrod` was dropped
+silently and looked exactly like a run with nothing to record; `--dir /opt/ae`
+wrote inside the project while registering an absolute path; `--config` pointed
+at TOML would have written JSON over it.
+
+**The tell:** you are reading arguments with `includes()` or `indexOf()`, and
+there is no branch for «this is not one of mine». Every guard downstream is then
+one typo away from being off, and being off looks identical to being satisfied.
+
+### An error swallowed into silence, which then reads as absence or success
+
+`catch { return null }` is the whole defect. A config that would not parse became
+`null`, then `{}`, then the file was replaced. An unreadable config became «no
+MCP servers here», which sends the ladder to «write one». A failed ledger append
+threw past the branch that decides the exit code.
+
+**The tell:** an empty catch, or a catch that returns the same value as «this
+does not exist». Absent and unreadable are different answers, and the second one
+has to be able to reach the report.

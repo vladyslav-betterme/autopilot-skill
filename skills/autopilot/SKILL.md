@@ -295,7 +295,12 @@ writing them is what ruled out seeing them.
 - **Write the verdict down** — which reviewer, what scope, what it reproduced,
   what it could not run. Verify is the other step that leaves no artifact of its
   own, so «a critic confirmed it» is exactly as checkable as «the tests passed»
-  was before `prove.mjs`: not at all, unless somebody records it.
+  was before `prove.mjs`: not at all, unless somebody records it. The evidence
+  column of `goal.md` holds a small round; a round too big for a cell gets a file
+  beside the ledger, **with the command that reproduces each finding**. A
+  cold-start drill on this repo found that its proudest number — «6 fatal, 11
+  major» — had no transcript, no path, and nothing to re-run: a criterion marked
+  met on evidence nobody can open.
 
 All reviewers are read-only, every time, said explicitly: not even a command
 meant to prove a bypass. A skeptic once ran a production migration script to
