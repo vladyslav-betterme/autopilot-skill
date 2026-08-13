@@ -251,6 +251,16 @@ Delete the fix, run it, see red, restore. A guard that cannot fire is worse than
 none: it reads as proof the case is handled. The same rule outside code — if the
 check cannot fail, it is decoration.
 
+**And when the work EMITTED something — a config, a script, a unit file, a
+generated server — run the thing you emitted.** Reading it proves nothing;
+three times in one campaign the defect was invisible on the page and obvious on
+the first execution. A generated MCP server looked correct and would have hung
+its client, because a JSON-RPC notification must get no reply. A carrier's
+wrapper read perfectly and exited 0 having never invoked the agent, because its
+steps were joined with `&&`. A launchd plist passed `plutil -lint` either way —
+only `launchctl bootstrap` + `kickstart`, and then reading what it wrote, showed
+it actually running. Emitting is not doing.
+
 **Verify — §3. Never skip it, never do it yourself.**
 
 **Land** however this project accepts work: commit and PR, publish, apply, hand

@@ -22,7 +22,7 @@ inventing a direction.
 | **A composed chain whose short-circuit swallows the payload** | 1 | first round |
 | **`process.exit` before stdout has drained** | 1 | first round |
 | **A discovered value hardcoded at the second call site** | 1 | first round |
-| **A document stating as an invariant what was never checked** | 8 claims | first round |
+| **A document stating as an invariant what was never checked** | 9 claims | first round — and one of them was written BY this campaign, an hour after the rule against it |
 
 ## Patterns
 
@@ -87,3 +87,17 @@ threw past the branch that decides the exit code.
 **The tell:** an empty catch, or a catch that returns the same value as «this
 does not exist». Absent and unreadable are different answers, and the second one
 has to be able to reach the report.
+
+### A document stating as an invariant what was never checked — including mine
+
+Eight of these came from the honesty auditor. The ninth was written by this
+campaign: `decisions.md` recorded «reached three wins and is written into
+SKILL.md §2» as a settled fact, and `grep -i emitted skills/autopilot/SKILL.md`
+returned nothing. The rule had been decided, the decision had been recorded, and
+the rule itself was never written down — one hour after landing a commit whose
+message says the ledger must carry a command that reproduces each claim.
+
+**The tell:** you are recording a decision ABOUT a change in the same breath as
+making it. The record is written from intent, and intent is not the file. Run
+the grep that would fail if you had not done it — it takes four seconds, and
+this one took four seconds to catch.
