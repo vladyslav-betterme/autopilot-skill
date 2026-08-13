@@ -121,38 +121,27 @@ ignore costs the same context as no audit.
 ### Skills are half of it — the other half is reach
 
 `skills.mjs` says what the agent KNOWS. `tools.mjs` says what it can TOUCH: the
-MCP servers it finds **in the config files it knows how to read** — Claude Code,
-Claude Desktop, Codex, Cursor, Gemini, opencode, VS Code — the plugins that carry
-more, and what nothing on disk can tell you. **An empty result means «not in
-these files», never «not on this machine»**, and a file it could not parse is
-reported as unknown rather than skipped. That distinction is not pedantry: an
-earlier version read one VS Code path and no Claude Desktop config at all, on a
-machine whose Claude Desktop config held an `AfterEffectsMCP` server — while this
-skill's worked example for writing one was «nothing drives After Effects».
+MCP servers it finds **in the config files it knows how to read**, the plugins
+that carry more, and what nothing on disk can tell you. **An empty result means
+«not in these files», never «not on this machine».**
 
 ```bash
 node <skill>/scripts/tools.mjs
 ```
 
-**A capability you lack is not a reason to narrow the goal.** It is a ladder,
-and the loop is expected to climb it (`references/tooling.md`):
+**A capability you lack is not a reason to narrow the goal.** It is a ladder —
+already reachable → **the app's own CLI** → a public server → a connector (park
+it, §6) → write one with `new-mcp.mjs`. The rungs, what each one costs and the
+traps in every one of them are in **`references/tooling.md`; read it before
+building anything**, because the two failures it prevents are invisible from
+here: deciding a capability is missing when it is already configured, and
+building a second answer to a question something already answers.
 
-| | |
-|---|---|
-| already reachable? | the session's own tool list, never a config file — then call it once, because a configured server that fails to launch reads exactly like «no such tool» |
-| the app's own CLI? | `aerender`, `osascript`, a vendor CLI. **This rung is skipped most and is right most** — a shell command needs no server, no schema and no restart |
-| a public MCP server? | search before writing; installing one runs somebody's code with your permissions, so announce it like a skill install |
-| a connector? | account-level OAuth an unattended agent cannot complete → PARK it (§6): name the connector, the click, and what you did instead |
-| none of the above | write it: `node <skill>/scripts/new-mcp.mjs <name> -d "<what it drives>"` |
-
-**The one that will bite:** most harnesses read their MCP config at STARTUP, so a
-server written mid-run is usually invisible to the session that wrote it. Some
-can reload (VS Code watches `mcp.json`; Gemini CLI has `/mcp refresh`) — assume
-startup **unless you have watched it reload**, because the cost of assuming
-wrongly is the whole run. That is why the scaffold is *also* a CLI —
-`node server.mjs --call <tool> '<json>'`, the same handlers. Use that form now
-and let the next session get the server. «Continue after a restart» is a stalled
-loop holding a file.
+**The one that will bite:** most harnesses read their MCP config at STARTUP, so
+a server written mid-run is usually invisible to the session that wrote it. That
+is why the scaffold is *also* a CLI — `node server.mjs --call <tool> '<json>'`,
+the same handlers. Use that form now and let the next session get the server.
+«Continue after a restart» is a stalled loop holding a file.
 
 Then, throughout: what you learn here becomes a skill of its own (§5), written
 by the loop and used the same session — and a capability it lacked becomes a

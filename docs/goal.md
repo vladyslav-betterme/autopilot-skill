@@ -59,3 +59,4 @@ fatal or major finding in the same area two rounds running.
 - **I4** — the ledger repair the cold-start drill demanded: this file, and `docs/reviews/2026-08-13.md`, so the council's numbers can be read by someone who was not there.
 - **prove** `npm run verify` → 0 · 2026-08-13T14:27:00Z
 - **prove** `npm run verify` → 0 · 2026-08-13T14:46:39Z
+- **prove** `npm run verify` → 0 · 2026-08-13T14:48:34Z
