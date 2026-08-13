@@ -138,16 +138,51 @@ test('FATAL WAS: a symlinked FILE too — a dirent is not a file either', () => 
   assert.equal(fs.readFileSync(path.join(d, 'vault', 'decisions.md'), 'utf8'), real);
 });
 
-test('the last line of defence holds even when detection is wrong', () => {
-  // Detection WAS wrong, and being wrong there is unrecoverable. `wx` makes
-  // «create only what is missing» true at the moment of writing, which is the
-  // only place it can be checked cheaply. Simulated by pre-placing a file the
-  // detector is blind to (an odd name it does not search for is not possible —
-  // so use the real one and assert it is never rewritten).
+test('the last line of defence FIRES when detection is wrong', () => {
+  // The previous version of this test pre-placed `changelog.md`, which the
+  // detector DOES see — so `skipIf` fired and the write was never reached. The
+  // whole suite stayed green with `flag: 'wx'` deleted: a guard with no failing
+  // demonstration, in the repo that forbids exactly that.
+  //
+  // This layout is one the detector genuinely misses: the target NAME exists as
+  // a symlink to a DIRECTORY, so the scan (which matches files) does not see a
+  // `goal.md`, and only the `wx` flag stops the write. Remove `wx` and this
+  // goes red with EISDIR, exit 1, taking the other four files with it.
   const d = tmp();
-  fs.writeFileSync(path.join(d, 'changelog.md'), 'MINE\n');
-  run('bootstrap.mjs', d);
-  assert.equal(fs.readFileSync(path.join(d, 'changelog.md'), 'utf8'), 'MINE\n');
+  fs.mkdirSync(path.join(d, 'docs'));
+  fs.mkdirSync(path.join(d, 'vault'));
+  fs.writeFileSync(path.join(d, 'vault', 'real.md'), '# real\n');
+  fs.symlinkSync('../vault', path.join(d, 'docs', 'goal.md'));
+
+  const out = run('bootstrap.mjs', d);
+  assert.match(out, /left alone.*goal\.md \(already there\)/);
+  assert.match(out, /created.*docs\/wins\.md/, 'the rest of the ledger must still be written');
+  assert.equal(fs.readFileSync(path.join(d, 'vault', 'real.md'), 'utf8'), '# real\n');
+});
+
+test('the ledger goes where the project already keeps knowledge, not beside it', () => {
+  // discover.mjs listed `notes` as a memory home while bootstrap had its own
+  // shorter list, so a project keeping everything in notes/ was told
+  // «memoryHomes: [notes]» and then handed a SECOND ledger at the repo root.
+  // One list now, in lib.mjs — this test is what holds the two together.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'notes'));
+  fs.writeFileSync(path.join(d, 'notes', 'decisions.md'), '# real\n');
+  const homes = JSON.parse(run('discover.mjs', d)).memoryHomes;
+  const out = run('bootstrap.mjs', d);
+  assert.ok(homes.includes('notes'), `discover said ${JSON.stringify(homes)}`);
+  assert.match(out, /ledger home: notes/, out);
+  assert.match(out, /left alone.*decisions\.md/);
+  assert.equal(fs.existsSync(path.join(d, 'decisions.md')), false, 'second decisions home at the root');
+  assert.equal(fs.readFileSync(path.join(d, 'notes', 'decisions.md'), 'utf8'), '# real\n');
+});
+
+test('a `docs` that is a FILE is not a crash', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'docs'), '# not a directory\n');
+  const out = run('bootstrap.mjs', d);
+  assert.match(out, /ledger home: \./);
+  assert.ok(fs.existsSync(path.join(d, 'goal.md')));
 });
 
 test('MAJOR WAS: a Python project got «make check» for a Makefile without one', () => {
@@ -274,4 +309,113 @@ test('every catalogued skill is tagged, and no name is claimed twice', () => {
   }
   const anyTagged = catalog.flatMap((s) => s.skills).filter(([, t]) => t.split(' ').includes('any'));
   assert.ok(anyTagged.length >= 5, 'the always-useful set is what a bare project starts from');
+});
+
+// ── what a council reproduced, 2026-08-13 ────────────────────────────────────
+
+test('FATAL WAS: `--install` built one comma-joined -s and installed NOTHING', () => {
+  // The CLI parses -s as space-separated variadic and matches names by exact
+  // equality, so `add repo -s a,b -y` matched zero skills and exited 1 — the
+  // arming step of the loop, silently doing nothing. Verified against the real
+  // installer both ways; asserted here on the argv, which needs no network.
+  const out = run('skills.mjs', tmp(), ['--install', 'any', '--dry-run']);
+  const lines = out.split('\n').filter((l) => l.startsWith('$ npx'));
+  assert.ok(lines.length >= 2, out);
+  for (const line of lines) {
+    assert.ok(!/-s\s+\S*,/.test(line), `comma-joined -s installs nothing: ${line}`);
+    const names = [...line.matchAll(/-s (\S+)/g)].map((m) => m[1]);
+    assert.ok(names.length >= 1 && names.every((n) => !n.includes(',')), line);
+  }
+  assert.match(out, /nothing was installed/);
+});
+
+test('a flag is never taken as a tag, and an unknown tag is refused loudly', () => {
+  // `--install --global any` used to read «--global» as the tag list: nothing
+  // matched, nothing installed, exit 0 with a satisfied-looking epilogue.
+  assert.throws(() => run('skills.mjs', tmp(), ['--install', '--global', 'any']), /refusing to install/);
+  assert.throws(() => run('skills.mjs', tmp(), ['--install', 'nosuchtag']), /no skill carries/);
+  assert.throws(() => run('skills.mjs', tmp(), ['--install', 'any', '--tags', 'react']), /pass the tags to --install/);
+});
+
+test('a package.json does not silence the check the project actually has', () => {
+  // `nodeProject() ?? …` returned an object even with no check-shaped script,
+  // so a repo with package.json + a real `check:` target reported checks: []
+  // and the loop went to ask a human for a command it already had.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ dependencies: { a: '1' } }));
+  fs.writeFileSync(path.join(d, 'Makefile'), 'check:\n\techo c\n');
+  const out = JSON.parse(run('discover.mjs', d));
+  assert.ok(out.project.checks.includes('make check'), JSON.stringify(out.project.checks));
+});
+
+test('a make VARIABLE is not a target — the check it prints must run', () => {
+  // `check:=1` matched `^check:` and produced `make check`, which exits 2.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'Makefile'), 'check:=1\nbuild:\n\techo hi\n');
+  fs.writeFileSync(path.join(d, 'pyproject.toml'), '[tool.ruff]\n');
+  const out = JSON.parse(run('discover.mjs', d));
+  assert.ok(!out.project.checks.includes('make check'), JSON.stringify(out.project.checks));
+});
+
+test('deno without a lockfile still has a check', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'deno.json'), JSON.stringify({ tasks: { start: 'deno run main.ts' } }));
+  assert.deepEqual(JSON.parse(run('discover.mjs', d)).project.checks, ['deno test -A']);
+});
+
+test('«no version control» never reads as «clean working tree»', () => {
+  // Both used to print dirty:false, and the second one means no undo exists.
+  const d = tmp();
+  assert.equal(JSON.parse(run('discover.mjs', d)).signals.vcs, 'none');
+  execFileSync('git', ['init', '-q'], { cwd: d });
+  assert.equal(JSON.parse(run('discover.mjs', d)).signals.vcs, 'git');
+});
+
+test('a written skill reaches EVERY agent directory, not just the first', () => {
+  // The link step ran only when the home was `.agents/skills`, so a project
+  // with .claude + .codex got the skill in one harness and silence in the
+  // other, while three docs claimed «every agent directory».
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.claude', 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(d, '.codex', 'skills'), { recursive: true });
+  const out = newSkill(d, ['multi-home', '-d', DESC]);
+  const written = ['.claude', '.codex'].map((a) => path.join(d, a, 'skills', 'multi-home', 'SKILL.md'));
+  for (const f of written) assert.ok(fs.existsSync(f), `${f} missing\n${out}`);
+});
+
+test('a DANGLING symlink is a conflict, not an invitation', () => {
+  // existsSync follows links, so a dangling one «did not exist», passed the
+  // conflict check, and then made the symlink step throw EEXIST — after the
+  // file had already been written. Half a skill, exit 1.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.agents', 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(d, '.claude', 'skills'), { recursive: true });
+  fs.symlinkSync('/nonexistent-target', path.join(d, '.claude', 'skills', 'ghost'));
+  assert.throws(() => newSkill(d, ['ghost', '-d', DESC]), /already exists/);
+  assert.equal(fs.existsSync(path.join(d, '.agents', 'skills', 'ghost')), false, 'a half-created skill');
+});
+
+test('an open but empty stdin is not a body — it is how a harness runs you', () => {
+  // `!isTTY` meant «a body was piped»; a harness hands an open pipe with
+  // nothing in it, the read threw EAGAIN, and the documented invocation died.
+  const d = tmp();
+  execFileSync('bash', ['-c',
+    `node ${JSON.stringify(path.join(SCRIPTS, 'new-skill.mjs'))} pipe-harness -d ${JSON.stringify(DESC)} 0< <(sleep 1)`],
+    { cwd: d, encoding: 'utf8' });
+  assert.ok(fs.existsSync(path.join(d, '.agents', 'skills', 'pipe-harness', 'SKILL.md')));
+});
+
+test('a harvested body does not bring a second frontmatter block', () => {
+  const d = tmp();
+  newSkill(d, ['harvested', '-d', DESC], '---\nname: something-else\ndescription: theirs\n---\n\n# real body\n');
+  const body = fs.readFileSync(path.join(d, '.agents', 'skills', 'harvested', 'SKILL.md'), 'utf8');
+  assert.equal(body.match(/^---$/gm).length, 2, `two frontmatter blocks:\n${body}`);
+  assert.match(body, /name: harvested/);
+  assert.match(body, /# real body/);
+});
+
+test('the skill name is not the description that preceded it', () => {
+  const d = tmp();
+  newSkill(d, ['-d', DESC, 'after-the-flag']);
+  assert.ok(fs.existsSync(path.join(d, '.agents', 'skills', 'after-the-flag', 'SKILL.md')));
 });

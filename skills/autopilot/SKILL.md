@@ -28,6 +28,10 @@ differs.
 
 ## 0. Bootstrap — once per project
 
+`<skill>` below is the directory this file sits in — `.agents/skills/autopilot`
+after a CLI install, or wherever it was cloned. Run everything from the PROJECT
+root.
+
 ```bash
 node <skill>/scripts/discover.mjs        # checks, memory homes, danger signals
 node <skill>/scripts/bootstrap.mjs       # creates the ledger if absent
@@ -37,10 +41,18 @@ node <skill>/scripts/skills.mjs          # the skill library — pick this proje
 `discover` prints the project's own check command. **That command is the
 definition of done for every iteration below.**
 
-If it prints `checks: []`, the project has no automatic check — that is common
-and not a blocker, but it is also **not permission to judge your own work**.
-Agree on an acceptance check *before* iteration one, and write it into the goal
-(§1). Any of these is a check; «I reviewed it and it looks right» is not:
+If it prints `checks: []`, **do not believe it yet.** Discovery only reads files
+that declare a check; a project's real check is often named in prose. Grep every
+path it listed in `memoryHomes`, plus the README and CI config, for a runnable
+command — one project's `checks: []` sat next to a `CLAUDE.md` naming
+`./tests/run_all.sh`, which ran 63 tests in four seconds, while the check an
+agent would have invented (`node --check`) was green on a dead app.
+
+Only when that search comes back empty does the project genuinely have no
+automatic check — common for prose, research and ops, and **not permission to
+judge your own work**. Agree on an acceptance check *before* iteration one and
+write it into the goal (§1). Any of these is a check; «I reviewed it and it
+looks right» is not:
 
 | The work | A check that is not your own opinion |
 |---|---|
@@ -48,7 +60,7 @@ Agree on an acceptance check *before* iteration one, and write it into the goal
 | a document | a claim-by-claim list with a source or a command per claim |
 | data | a query someone else can re-run that returns the expected shape |
 | infra / ops | an observation from the system itself, before and after |
-| research | the question restated as something falsifiable, and what would refute it |
+| research | the query or extraction that produces the number, plus the result you registered IN ADVANCE as refuting it — both re-runnable by someone else |
 
 Read what discovery found before touching anything:
 
@@ -60,24 +72,34 @@ Read what discovery found before touching anything:
   iteration, **ask** whether the working environment points at production. It has
   been, on projects where nothing in the repo said so and every local run looked
   harmless. Assume yes until told otherwise.
+- **`signals.vcs`** — `none` means no undo exists. Copy the inputs somewhere
+  safe before iteration one, and say where in `goal.md`; §8's «commit what is
+  green» has no meaning here and that is exactly when work is lost.
 - **`signals.dirty`** — uncommitted work is somebody's. Branch, never build on top.
 
 ### Arm yourself before iteration one
 
-`skills.mjs` is the shortlist of public skills worth having, tagged by niche —
-process and review on every project, then web, React, database, documents,
-native, infrastructure, research as the project actually needs them.
+`skills.mjs` is the shortlist of public skills worth having, tagged by niche.
+The tags are the vocabulary — `any` and `review` on every project, then `web`,
+`react`, `db`, `docs`, `perf`, `a11y`, `mac`, `infra`, `research`, `design` as
+the project actually needs them.
 
 ```bash
-node <skill>/scripts/skills.mjs                    # the catalogue and its tags
-node <skill>/scripts/skills.mjs --install any      # the always-useful set
-node <skill>/scripts/skills.mjs --install react,perf,db   # this project's niches
+node <skill>/scripts/skills.mjs                            # the catalogue and its tags
+node <skill>/scripts/skills.mjs --install any --dry-run    # what it WOULD run
+node <skill>/scripts/skills.mjs --install any              # the always-useful set
+node <skill>/scripts/skills.mjs --install react,perf,db    # this project's niches
 ```
 
 **Choose, do not hoard.** Every installed skill's description is loaded on every
 turn: a hundred skills is not a hundred capabilities, it is a smaller window and
-a model that skims. Install what this project is, and read what you installed —
-they are third-party and they run with your permissions.
+a model that skims.
+
+Installing is running third-party code with your permissions, so it is an
+announced act: `--dry-run` first, say what you are about to add and why, then
+install. If the project matches no niche in the catalogue, `any` alone is the
+correct answer — and `find-skills` is the entry point for a niche the catalogue
+is thin on (research, infra, data are thin today).
 
 Then, throughout: what you learn here becomes a skill of its own (§5), written
 by the loop and used the same session.
@@ -93,12 +115,21 @@ done-criteria**. Into `goal.md`, or whatever discovery found already holds this.
   as §0. A criterion only you can confirm is not a criterion; rewrite it.
 - Unknowns are allowed, as criteria of their own: «we know whether N is the
   cause» is a legitimate done-criterion for research.
+- **If nobody gave you a goal** — «продовжуй» and nothing else — the first
+  iteration's ONLY output is a proposed `goal.md` and the question for the
+  human. A criterion you authored and then satisfied is claim #2 above, wearing
+  a checklist.
+- `goal.md` also carries the FIXED state: the check command, its baseline
+  output, the answer to the production question, the branch (or where the copy
+  of the inputs is), and which skills were installed. A resume that has to
+  re-derive those has not resumed.
 
 **The loop then runs until every criterion is met AND verified.** Not until the
 model feels finished, not until the critics go quiet — they never do. Each
 iteration ends by marking in `goal.md` which criterion moved and what proves it.
 
-Stop the loop early only for the reasons in §7 (ask) and §8 (thrash, context).
+Stop the loop early only for the reasons in §6 (ask), §7 (thrash) and §8
+(context).
 
 ## 2. The iteration
 
@@ -119,13 +150,23 @@ symptom the request names: find every other place with the same shape first, and
 fix it where they all pass through.
 
 **Prove.** Run the discovered check, **in the foreground, reading the exit code
-in the shell that ran it.** Three ways a check lies, all observed:
+in the shell that ran it.** Run it ONCE BEFORE the first iteration too and paste
+that into `goal.md`: a failure that predates you is a decision to record, not
+your iteration's fault, and without the baseline you will either adopt someone
+else's red or book their green as progress. A check that has ever disagreed with
+itself is flaky — re-run it three times before a criterion is marked met. Three
+ways a check lies, all observed:
 
 | | |
 |---|---|
 | `check \| tail` | reports `tail`'s status |
 | `check > log; echo "EXIT=$?"` | `;` makes the status the LAST command's — always 0 |
 | a backgrounded wrapper | the completion notification reports the **wrapper** |
+
+**When there is no command**, Prove is not skipped and is not «I read it again».
+Re-run the acceptance check exactly as `goal.md` words it, paste its output, and
+say what a failing result would have looked like. If you cannot state the
+failure, you do not have a check.
 
 Every new guard needs a demonstration you have **watched fail** without the fix.
 Delete the fix, run it, see red, restore. A guard that cannot fire is worse than
@@ -145,8 +186,8 @@ not a deploy, and a merged PR is not a live change.
 
 This is not the same as running the check, and it is not optional.
 
-**Your own fixes are the second-largest source of defects** — measured at
-58–68 % of all findings in later review rounds. You cannot see them, because
+**Your own fixes are the second-largest source of defects** — 58–68 % of all
+findings in the later rounds of one measured campaign, on one repository. You cannot see them, because
 writing them is what ruled out seeing them.
 
 - **Every iteration: at least one subagent** that did not do the work, given the
@@ -156,8 +197,12 @@ writing them is what ruled out seeing them.
   one lens each, then one skeptic per finding. That file also carries the prompt
   rules that measurably changed what came back, and the two cheapest agents
   (convergence analyst, honesty auditor) that return the most.
-- **After fixing what review found, review again.** The fixes are where the
-  self-inflicted defects live.
+- **After fixing what review found, review again** — the fixes are where the
+  self-inflicted defects live. **One round plus one re-review is the budget.** A
+  third round means the change was too big: split it.
+- **No subagent available?** Then say so and stop at that criterion. A second
+  pass by the same context is not verification, and calling it one is the whole
+  failure this section exists for.
 
 All reviewers are read-only, every time, said explicitly: not even a command
 meant to prove a bypass. A skeptic once ran a production migration script to
@@ -234,6 +279,12 @@ Autonomy is not permission. Stop, say what you would do, and wait:
 - **You are about to claim something you cannot reproduce on demand.** Say «not
   verified» instead.
 
+**Asking must not kill an unattended run.** When the human is unavailable, a
+criterion blocked on their decision is PARKED in `goal.md` — both options, both
+costs, what you did instead — and the loop moves to the next criterion. It stops
+when every remaining criterion is parked, and then reports all of them at once.
+What is never parked: spending money, and anything irreversible.
+
 ## 7. Stop the loop when
 
 The goal decides, not the mood. Stop when **every done-criterion in `goal.md` is
@@ -247,8 +298,13 @@ four of these hold too:
 
 **Also stop — and report — when the loop is not moving.** Two consecutive
 iterations with no criterion advanced is thrash, not persistence: say what is
-blocking, what you tried, and what you need. A loop that keeps going on a wrong
-premise burns more than one that stops.
+blocking, what you tried, and what you need.
+
+Thrash detection does not catch the worse case: a goal that is WRONG advances
+its criteria happily forever. So run `references/premise-check.md` against the
+GOAL itself every third iteration — is this still the thing worth doing, and is
+it still true? And when two criteria contradict, that is a defect in the goal,
+not an iteration to attempt: stop, record it, ask.
 
 ## 8. Context
 

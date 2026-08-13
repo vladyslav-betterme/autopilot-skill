@@ -17,6 +17,7 @@
  *   node skills.mjs                     # the catalogue
  *   node skills.mjs --tags react,perf   # only what matches
  *   node skills.mjs --json              # machine-readable
+ *   node skills.mjs --install any --dry-run   # the exact commands, run nothing
  *   node skills.mjs --install any       # install the always-useful set
  *   node skills.mjs --install db,docs --global
  */
@@ -145,39 +146,68 @@ const LIBRARY = [
 ];
 
 const argv = process.argv.slice(2);
+const has = (name) => argv.includes(name);
+/** A flag's value is the next argv entry ONLY if it is not itself a flag —
+ *  `--install --global any` used to take «--global» as the tag list, match
+ *  nothing, install nothing, and exit 0 with a satisfied-looking epilogue. */
 const flag = (name) => {
   const i = argv.indexOf(name);
-  return i === -1 ? null : (argv[i + 1] ?? '');
+  if (i === -1) return null;
+  const v = argv[i + 1];
+  return v && !v.startsWith('-') ? v : '';
 };
-const wants = (flag('--tags') ?? flag('--install') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const tagList = (v) => (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const installTags = tagList(flag('--install'));
+const filterTags = tagList(flag('--tags'));
+if (has('--install') && has('--tags')) {
+  console.error('pass the tags to --install itself: --install any,react  (--tags only filters the catalogue)');
+  process.exit(2);
+}
+const wants = has('--install') ? installTags : filterTags;
 const matches = (tags) => !wants.length || wants.some((w) => tags.split(' ').includes(w));
 
 const selected = LIBRARY
   .map((src) => ({ ...src, skills: src.skills.filter(([, tags]) => matches(tags)) }))
   .filter((src) => src.skills.length);
 
-if (argv.includes('--json')) {
+if (has('--json')) {
   console.log(JSON.stringify(selected, null, 2));
   process.exit(0);
 }
 
-if (argv.includes('--install')) {
+if (has('--install')) {
   if (!wants.length) {
     console.error('refusing to install everything — pass tags, e.g. --install any,react\n' +
       'run without --install to see the catalogue and its tags.');
     process.exit(2);
   }
-  const scope = argv.includes('--global') ? ['-g'] : [];
+  // An unknown tag used to select nothing and exit 0, which reads exactly like
+  // «installed». Refuse the empty SELECTION, not just the empty argument.
+  if (!selected.length) {
+    console.error(`no skill carries ${wants.join(' or ')} — run without --install to see the tags.`);
+    process.exit(2);
+  }
+  const scope = has('--global') ? ['-g'] : [];
+  const dry = has('--dry-run');
   const failed = [];
   for (const src of selected) {
-    const names = src.skills.map(([n]) => n).join(',');
-    const args = ['--yes', 'skills@latest', 'add', src.repo, '-s', names, '-y', ...scope];
+    // ONE `-s` PER SKILL. The CLI parses -s as space-separated variadic and
+    // matches names by exact equality, so a comma-joined list matched nothing:
+    // `add obra/superpowers -s a,b -y` exits 1 having installed zero skills.
+    // Verified by running both forms.
+    const args = ['--yes', 'skills@latest', 'add', src.repo,
+      ...src.skills.flatMap(([n]) => ['-s', n]), '-y', ...scope];
     console.log(`\n$ npx ${args.join(' ')}`);
+    if (dry) continue;
     try {
       execFileSync('npx', args, { stdio: 'inherit' });
     } catch {
       failed.push(src.repo);
     }
+  }
+  if (dry) {
+    console.log('\n--dry-run: nothing was installed.');
+    process.exit(0);
   }
   console.log('\nThese are third-party skills and they run with full agent permissions.');
   console.log('Read what you installed before the loop starts using it.');
@@ -194,9 +224,10 @@ for (const src of selected) {
   for (const [name, tags, what] of src.skills) {
     console.log(`  ${name.padEnd(width)}  ${what}  \x1b[2m[${tags}]\x1b[0m`);
   }
-  console.log(`  \x1b[2m$ npx skills add ${src.repo} -s ${src.skills.map(([n]) => n).join(',')} -y\x1b[0m`);
+  console.log(`  \x1b[2m$ npx skills add ${src.repo} ${src.skills.map(([n]) => `-s ${n}`).join(' ')} -y\x1b[0m`);
 }
 const allTags = [...new Set(LIBRARY.flatMap((s) => s.skills.flatMap(([, t]) => t.split(' '))))].sort();
 console.log(`\ntags: ${allTags.join(' ')}`);
 console.log('pick by project, not by appetite — every installed skill costs context on every turn.');
-console.log('install: node skills.mjs --install any        (add the niches this project is actually in)');
+console.log('thin outside code and web: for a niche with one entry or none, `find-skills` is the real entry point.');
+console.log('install: node skills.mjs --install any --dry-run   (then drop --dry-run to actually install)');

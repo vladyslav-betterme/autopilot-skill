@@ -16,7 +16,7 @@ which is worse than no skill: it trains the reader to skim.
 - **A `description` naming the trigger words** that should summon it — including
   the ones the owner actually says, in their language. A skill that never fires
   is a file.
-- **The incident**, not the principle. «Never trust a piped gate» is forgettable;
+- **The incident**, not the principle. «Never trust a piped check» is forgettable;
   «`… | tail` reports tail's status and shipped six red deploys that read as
   green locally» is not.
 - **What it does NOT cover.** Every guard has an edge it cannot see; writing it

@@ -1,76 +1,24 @@
-#!/usr/bin/env node
-/**
- * Create the ledger — once, in the project's OWN memory home.
- *
- * The rule this script exists to obey: never create a second home for a kind of
- * knowledge that already has one. A second CHANGELOG.md beside an existing one
- * is worse than no changelog, because now neither is authoritative. So it
- * DISCOVERS first, writes only what is missing, and never overwrites.
- *
- * Idempotent. Prints what it did and what it deliberately left alone.
- */
 import fs from 'node:fs';
 import path from 'node:path';
+import { MEMORY_HOMES, statKind, findExisting as scanFor } from './lib.mjs';
 
 const root = process.cwd();
 const has = (p) => fs.existsSync(path.join(root, p));
 
-/** 'file' | 'dir' | null, resolving symlinks — the one question, asked one way. */
-function statKind(abs) {
-  try {
-    const st = fs.statSync(abs);
-    return st.isFile() ? 'file' : st.isDirectory() ? 'dir' : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Where this project already keeps prose. First hit wins — do not spread. */
-const HOME_CANDIDATES = ['docs/learnings', 'docs/decisions', 'docs/notes', 'docs', '.'];
-const home = HOME_CANDIDATES.find(has) ?? 'docs';
-
 /**
- * Does a file whose name MEANS this already exist anywhere in the docs tree?
- *
- * Takes every synonym, because the name is not the knowledge: a project that
- * keeps `defect-patterns.md` already has a failures ledger, and creating
- * `failures.md` beside it is exactly the second home this script exists to
- * prevent. The first version checked three hardcoded paths and made
- * `decisions.md` next to an existing `docs/agent/DECISIONS.md` — it failed its
- * own purpose on the first run.
- *
- * Case-insensitive on purpose: macOS filesystems are, so `changelog.md` and
- * `CHANGELOG.md` are the same file and a case-sensitive check invents a
- * conflict that the OS then silently resolves.
+ * Where this project already keeps prose. Taken from the SAME list discovery
+ * prints as `memoryHomes`, directories only — a council found the two lists had
+ * drifted, so a project keeping everything in `notes/` was told «memoryHomes:
+ * [notes]» and then handed a second ledger at the repo root.
  */
-function findExisting(...stems) {
-  const re = new RegExp(`^(${stems.join('|')})(s)?\\.md$`, 'i');
-  const roots = ['.', 'docs'];
-  const out = [];
-  for (const r of roots) {
-    const dir = path.join(root, r);
-    if (!fs.existsSync(dir)) continue;
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      // statSync FOLLOWS a symlink; a dirent's isFile()/isDirectory() do NOT.
-      // That disagreement was a data-loss bug: `has()` (existsSync, follows)
-      // elected `docs/learnings -> ../vault` as the home, while this scan
-      // (dirent, does not follow) never looked inside it — so a real
-      // decisions.md was overwritten with an empty template, exit 0, output
-      // saying «created». Ask the filesystem the same question in both places.
-      const kind = statKind(path.join(dir, e.name));
-      if (kind === 'file' && re.test(e.name)) out.push(path.join(r, e.name));
-      if (kind === 'dir' && r === 'docs') {
-        const sub = path.join(dir, e.name);
-        for (const f of fs.readdirSync(sub, { withFileTypes: true })) {
-          if (statKind(path.join(sub, f.name)) === 'file' && re.test(f.name)) {
-            out.push(path.join(r, e.name, f.name));
-          }
-        }
-      }
-    }
-  }
-  return out;
-}
+// `docs` and `.` are FALLBACK homes, not memory homes discovery would claim —
+// which is why they are added here and not to the shared list.
+const HOME_CANDIDATES = [...MEMORY_HOMES.filter((p) => !p.endsWith('.md')), 'docs', '.'];
+const home = HOME_CANDIDATES.find((p) => statKind(path.join(root, p)) === 'dir') ?? 'docs';
+
+/** Does a file whose name MEANS this already exist? Synonyms included, because
+ *  the name is not the knowledge. One scanner, shared with discovery. */
+const findExisting = (...stems) => scanFor(root, ...stems);
 
 const EXISTING_CHANGELOG = findExisting('changelog')[0];
 const EXISTING_BACKLOG = findExisting('todo', 'roadmap', 'backlog')[0];
@@ -85,10 +33,26 @@ The loop runs until every criterion below is met AND verified by someone who did
 not do the work. This file is the loop's state: a fresh session resumes from
 here without re-deriving the plan.
 
+## Fixed state — written once, at bootstrap
+
+A resume that has to re-derive these has not resumed. Fill them before
+iteration one.
+
+| | |
+|---|---|
+| check command | <!-- the exact command, or the agreed acceptance check --> |
+| baseline | <!-- its output BEFORE the first iteration: a failure that predates you is not yours --> |
+| points at production? | <!-- asked and answered, not assumed --> |
+| version control | <!-- git branch, or «none» — and where the copy of the inputs lives --> |
+| skills installed | <!-- what was added for this project, and why --> |
+
 ## The goal, in one falsifiable sentence
 
 <!-- «Make X better» cannot be falsified. «No path spends money without an
-     explicit tap, and each guarantee is held by a type or a failing test» can. -->
+     explicit tap, and each guarantee is held by a type or a failing test» can.
+     If the goal was not given, the first iteration's ONLY output is a proposed
+     goal and the question for the human — never a criterion you wrote and then
+     satisfied yourself. -->
 
 ## Done-criteria
 
@@ -97,6 +61,12 @@ Each one must be checkable by someone who is not the author.
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
 | 1 |  |  | no |  |
+
+## Parked
+
+A criterion blocked on a decision only the human can make: both options, both
+costs, and what the loop did instead. The loop stops when every REMAINING
+criterion is parked — not at the first block.
 
 ## Iteration log
 
@@ -166,7 +136,13 @@ was wrong before.
 
 const wrote = [];
 const skipped = [];
-fs.mkdirSync(path.join(root, home), { recursive: true });
+try {
+  fs.mkdirSync(path.join(root, home), { recursive: true });
+} catch (err) {
+  console.error(`cannot use «${home}» as the ledger home: ${err.code ?? err.message}.\n` +
+    'Point the loop at a writable directory, or fix that path — nothing was written.');
+  process.exit(1);
+}
 
 for (const f of FILES) {
   if (f.skipIf()) {
@@ -182,8 +158,9 @@ for (const f of FILES) {
     fs.writeFileSync(target, f.body, { flag: 'wx' });
     wrote.push(path.join(home, f.name));
   } catch (err) {
-    if ((err && err.code) !== 'EEXIST') throw err;
-    skipped.push(`${f.name} (already there)`);
+    if ((err && err.code) === 'EEXIST') { skipped.push(`${f.name} (already there)`); continue; }
+    console.error(`cannot write ${path.join(home, f.name)}: ${err.code ?? err.message}`);
+    process.exit(1);
   }
 }
 

@@ -81,27 +81,32 @@ overwrites** — it prints what it deliberately left alone.
 {
   "project":     { "kind": "node", "packageManager": "npm", "checks": ["npm run verify"] },
   "memoryHomes": ["CLAUDE.md", "docs/learnings", "CHANGELOG.md"],
-  "signals":     { "hasCI": true, "envFilesPresent": [".env.local"], "dirty": false }
+  "signals":     { "hasCI": true, "vcs": "git", "envFilesPresent": [".env.local"], "dirty": false }
 }
 ```
 
 **`checks` is the definition of done for every iteration.** Node, Deno, Python,
-Rust, Go, Gradle, Maven, .NET, Ruby, Elixir, PHP, `Makefile` and `justfile`
-targets. If it comes back empty — normal for research, prose and ops work — the
-skill says so and requires an acceptance check agreed with you, rather than
-inventing one. A loop with no check stops when the model is satisfied, which is
-the failure mode the whole thing is built against.
+Rust, Go, Gradle, Maven, .NET, Ruby, Elixir, `Makefile` and `justfile` targets,
+plus composer scripts. Empty is a legitimate answer — normal for research, prose
+and ops — but the skill does not take it at face value: it first greps the
+memory homes and README for a check named in prose (one project's `checks: []`
+sat next to a `CLAUDE.md` naming a 63-test script), and only then asks you to
+agree an acceptance check. It never invents one. A loop with no check stops when
+the model is satisfied, which is the failure mode the whole thing is built
+against.
 
 ## It arms itself, and it writes its own skills
 
 **Before the first iteration** it installs what the project's niche needs, from
-a tagged shortlist of the best public skill sets — process and review on
-everything, then web, React, database, documents, native, infra, research:
+a tagged shortlist of the best public skill sets. The tags are the vocabulary —
+`any` and `review` everywhere, then `web`, `react`, `db`, `docs`, `perf`,
+`a11y`, `mac`, `infra`, `research`, `design`:
 
 ```bash
-node <skill>/scripts/skills.mjs                          # catalogue + tags
-node <skill>/scripts/skills.mjs --install any            # the always-useful set
-node <skill>/scripts/skills.mjs --install react,perf,db  # this project's niches
+node <skill>/scripts/skills.mjs                            # catalogue + tags
+node <skill>/scripts/skills.mjs --install any --dry-run    # the exact commands, run nothing
+node <skill>/scripts/skills.mjs --install any              # the always-useful set
+node <skill>/scripts/skills.mjs --install react,perf,db    # this project's niches
 ```
 
 Sources: [`obra/superpowers`](https://github.com/obra/superpowers),
@@ -114,7 +119,9 @@ Sources: [`obra/superpowers`](https://github.com/obra/superpowers),
 [`vercel-labs/skills`](https://github.com/vercel-labs/skills). It refuses to
 install everything: every skill's description costs context on **every** turn,
 so it picks by tag and tells you to read what you installed — they are
-third-party and run with your permissions.
+third-party and run with your permissions. Outside code and web the catalogue is
+thin, and it says so rather than pretending: `find-skills` is the entry point
+for a niche it does not cover.
 
 **During the loop it writes new ones.** A pattern recorded in `wins.md` three
 times graduates into a skill, written by the loop and **live in the same
@@ -126,8 +133,10 @@ node <skill>/scripts/new-skill.mjs <name> -d "…" < body.md
 ```
 
 It writes into the shared skills home, symlinks into every agent directory the
-project has, refuses a name that already exists, and refuses a description too
-vague to ever trigger.
+project has (`.claude`, `.codex`, `.gemini`, `.cursor`, `.opencode`), refuses a
+name that already exists — including one held by a dangling symlink — and
+refuses a description under 40 characters, on the grounds that the description
+IS the trigger.
 
 ## What's inside
 
@@ -138,7 +147,8 @@ vague to ever trigger.
 | [`references/critics.md`](skills/autopilot/references/critics.md) | The review shape that produced reproductions instead of essays: one lens per hunter, one skeptic per finding, everyone read-only. |
 | [`references/ledger.md`](skills/autopilot/references/ledger.md) | The five files, and the admission bar that keeps each one worth reading. |
 | [`references/distillation.md`](skills/autopilot/references/distillation.md) | Turning a pattern that worked **three times** into a skill — and when to delete one. |
-| [`scripts/discover.mjs`](skills/autopilot/scripts/discover.mjs) | The project's own check, its memory homes, and the signals a loop must not trip. |
+| [`scripts/discover.mjs`](skills/autopilot/scripts/discover.mjs) | The project's own check, its memory homes, and the signals a loop must not trip — including whether version control exists at all. |
+| [`scripts/lib.mjs`](skills/autopilot/scripts/lib.mjs) | The questions two scripts both ask, asked in one place: where knowledge lives, and whether a file that means this already exists. |
 | [`scripts/bootstrap.mjs`](skills/autopilot/scripts/bootstrap.mjs) | The ledger, in the project's **own** memory home, only what is missing. |
 | [`scripts/skills.mjs`](skills/autopilot/scripts/skills.mjs) | The skill library, tagged by niche. Installs on request, never wholesale. |
 | [`scripts/new-skill.mjs`](skills/autopilot/scripts/new-skill.mjs) | Write a skill from a win and link it where the harness loads from. |
@@ -149,7 +159,9 @@ Zero dependencies. Plain Node ≥ 20.11, anywhere Node runs.
 
 - **The check is discovered, not declared** — and run in the foreground, reading
   the exit code in the shell that ran it, because `check | tail` reports
-  `tail`'s status and `check > log; echo $?` reports the `echo`'s.
+  `tail`'s status and `check > log; echo done` exits with `echo`'s status, not
+  the check's. Run it once BEFORE the first iteration too: a failure that
+  predates you is a decision to record, not your fault to inherit.
 - **Every new guard needs a demonstration you have watched fail.** Delete the
   fix, run it, see red, restore. A guard that cannot fire is worse than none: it
   reads as proof the case is handled.
@@ -168,14 +180,19 @@ Zero dependencies. Plain Node ≥ 20.11, anywhere Node runs.
 ## Tests
 
 ```bash
-npm test          # 23 tests, no install step, no dependencies
+npm test          # 36 tests, no install step, no dependencies
 ```
 
-They are not decoration. Several pin defects a review council reproduced in
-these scripts, including the one that overwrote a real `decisions.md` through a
-symlinked memory home while printing «created» and exiting 0 — a layout
-`references/distillation.md` recommends. **A tool that recommends a layout must
-be tested against that layout.**
+They are not decoration. Most of them pin defects a review council reproduced in
+these scripts — the ledger written beside the project's real one instead of into
+it, `--install` building a comma-joined argument that installed **nothing**, a
+`package.json` silencing the `Makefile` check the project actually had, `check:=1`
+producing a `make check` that exits 2, a written skill reaching one agent
+directory out of two.
+
+Including one about the tests themselves: the guard against overwriting a file
+had no test that could fail — the suite stayed green with `flag: 'wx'` deleted.
+It now goes red. **A guard with no failing demonstration is decoration.**
 
 ## Limits
 
@@ -184,9 +201,9 @@ be tested against that layout.**
   and runs the checks.
 - Check discovery covers the ecosystems listed above. Anything else reports **no
   check** — deliberately, and loudly.
-- `bootstrap.mjs` looks for existing ledger files in `.` and `docs/` (one level
-  deep). A ledger buried deeper is not seen; read the `left alone` line before
-  accepting what it created.
+- `bootstrap.mjs` looks for existing ledger files in `.`, `docs/`, `notes/` and
+  `.github/`, one level below each. A ledger buried deeper is not seen; read the
+  `left alone` line before accepting what it created.
 - `skills.mjs` shells out to `npx skills` for installs, so that one command
   needs the network. Everything else is offline.
 

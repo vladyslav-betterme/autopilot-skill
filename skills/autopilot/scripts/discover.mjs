@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { MEMORY_HOMES } from './lib.mjs';
 
 const root = process.cwd();
 const read = (p) => { try { return fs.readFileSync(path.join(root, p), 'utf8'); } catch { return null; } };
@@ -30,6 +31,9 @@ const CHECK_ORDER = ['verify', 'check', 'ci', 'lint', 'typecheck', 'type-check',
  *  own opinion about order and completeness, and it cannot drift from itself. */
 const AGGREGATE = CHECK_ORDER.slice(0, 3);
 const INDIVIDUAL = CHECK_ORDER.slice(3);
+/** A recipe file has no «aggregate vs individual» split, but it must not invent
+ *  a SECOND order for the same question — so it reads the one list above. */
+const WANTED = CHECK_ORDER.filter((n) => !n.startsWith('type'));
 
 /** One task map (npm scripts, deno tasks, composer scripts) → one check list. */
 function fromTaskMap(tasks, prefix) {
@@ -55,8 +59,9 @@ function denoProject() {
   if (!json) return null;
   const fromTasks = fromTaskMap(json.tasks ?? {}, 'deno task');
   // A project with no task named like a check still has `deno test`, which is
-  // real and runnable — unlike a made-up one.
-  if (!fromTasks.checks.length && has('deno.lock')) fromTasks.checks.push('deno test -A');
+  // real and runnable — unlike a made-up one. (It used to require deno.lock,
+  // which Deno does not, so a lockless project reported no check at all.)
+  if (!fromTasks.checks.length) fromTasks.checks.push('deno test -A');
   return { kind: 'deno', ...fromTasks };
 }
 
@@ -72,9 +77,11 @@ function denoProject() {
 function recipeTarget(file, wanted) {
   if (!has(file)) return null;
   const body = read(file) ?? '';
-  return wanted.find((t) => new RegExp(`^${t}:`, 'm').test(body)) ?? null;
+  // `check:=1` is a VARIABLE, not a target — and `make check` on it exits 2.
+  // A made-up check is worse than an honest none, so the colon must not be
+  // part of an assignment (`:=`, `::=`, `:::=`).
+  return wanted.find((t) => new RegExp(`^${t}[ \\t]*:(?!:*=)`, 'm').test(body)) ?? null;
 }
-const WANTED = ['check', 'ci', 'verify', 'test', 'lint'];
 const makeCheck = () => { const t = recipeTarget('Makefile', WANTED); return t ? `make ${t}` : null; };
 const justCheck = () => { const t = recipeTarget('justfile', WANTED) ?? recipeTarget('Justfile', WANTED); return t ? `just ${t}` : null; };
 
@@ -107,21 +114,28 @@ function genericProject() {
   return checks.length ? { kind: 'generic', checks, allScripts: [] } : null;
 }
 
-const project =
-  nodeProject() ?? denoProject() ?? pythonProject() ?? genericProject() ??
+/**
+ * Every detector runs, and their checks are UNIONED.
+ *
+ * `??` alone was wrong: a package.json with no check-shaped script still
+ * returns an object, so a repo carrying `package.json` + a Makefile with a real
+ * `check:` target reported `checks: []` and sent the loop off to ask a human
+ * for a command the project already had.
+ */
+const detected = [nodeProject(), denoProject(), pythonProject(), genericProject()].filter(Boolean);
+const checks = [...new Set(detected.flatMap((d) => d.checks))];
+const primary = detected.find((d) => d.checks.length) ?? detected[0];
+const project = primary
+  ? { ...primary, checks }
   /** No automatic check is a legitimate answer — for prose, research, ops and
    *  design work it is the NORMAL one. The skill then requires an acceptance
    *  check agreed with the human before the first iteration. What it must never
    *  do is invent one, or let the model judge its own work by default. */
-  { kind: 'unknown', checks: [], allScripts: [] };
+  : { kind: 'unknown', checks: [], allScripts: [] };
 
-/** Where durable knowledge already lives, if anywhere. Never invent a second home. */
-const memoryHomes = [
-  'CLAUDE.md', 'AGENTS.md', 'CONTRIBUTING.md',
-  'docs/learnings', 'docs/decisions', 'docs/adr', 'docs/architecture', 'docs/notes', 'notes',
-  'GOAL.md', 'TODO.md', 'ROADMAP.md',
-  'CHANGELOG.md', 'docs/CHANGELOG.md',
-].filter(has);
+/** Where durable knowledge already lives, if anywhere. Never invent a second
+ *  home — and the ledger writer reads THIS list, not one of its own. */
+const memoryHomes = MEMORY_HOMES.filter(has);
 
 /** Guardrails a loop must not trip. Presence is a signal, not a rule. */
 const signals = {
@@ -131,6 +145,10 @@ const signals = {
   /** A working environment that points at production is the single most
    *  dangerous thing a loop can meet, and it is never obvious. Worth ASKING. */
   envFilesPresent: ['.env', '.env.local', '.env.development'].filter(has),
+  /** `dirty: false` used to mean BOTH «clean repo» and «not a repo at all» —
+   *  and the second one is the dangerous one: no branch, no undo, and §8's
+   *  «commit what is green» is impossible. Say which it is. */
+  vcs: sh('git', ['rev-parse', '--is-inside-work-tree']) === 'true' ? 'git' : 'none',
   defaultBranch: sh('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])?.split('/').pop() ?? null,
   remote: sh('git', ['remote', 'get-url', 'origin']),
   dirty: (sh('git', ['status', '--porcelain']) ?? '').length > 0,

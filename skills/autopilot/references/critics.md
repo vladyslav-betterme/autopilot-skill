@@ -1,7 +1,9 @@
 # Critics — the review shape that produced reproductions
 
 The point is not opinions. It is finding the defect **you** cannot see because
-you did the work — measured at 58–68 % of all findings in later rounds.
+you did the work — 58–68 % of all findings in the later rounds of one measured
+campaign, on one repository. Your own number will differ; that it is large is
+the part that keeps being true.
 
 ```
 N hunters in parallel — ONE lens each, a schema, and facts marked «do not re-verify»
