@@ -588,10 +588,13 @@ test('the generated CLI does not truncate at the pipe buffer', () => {
   // process.exit dropped everything past 65536 bytes and still exited 0.
   const d = tmp();
   run('new-mcp.mjs', d, ['big', '-d', 'a server used to prove the CLI path does not lose output']);
-  const payload = 'x'.repeat(200000);
+  // 100 000, not 200 000: Linux caps a single argument at 128 KiB (MAX_ARG_STRLEN)
+  // and spawnSync raises E2BIG — which macOS does not. Anything past the 64 KiB
+  // pipe buffer proves the point.
+  const payload = 'x'.repeat(100000);
   const out = execFileSync('node', ['tools/big-mcp/server.mjs', '--call', 'ping', JSON.stringify({ text: payload })],
     { cwd: d, encoding: 'utf8', maxBuffer: 1024 * 1024 });
-  assert.ok(out.length > 200000, `truncated to ${out.length} bytes`);
+  assert.ok(out.length > 65536, `truncated to ${out.length} bytes — the pipe buffer won`);
 });
 
 test('a config it cannot read is reported as UNKNOWN, never as absent', () => {
@@ -627,7 +630,11 @@ test('an unknown flag to tools.mjs is an error — «--cost» must not read as m
  * thirty minutes and doing nothing is the worst shape this repo has produced.
  */
 const carrierWrapper = (cwd, args) => {
-  const plist = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), ...args],
+  // `--kind launchd` explicitly: the default follows the PLATFORM, so on Linux
+  // this emitted a crontab line, the plist regex matched nothing, and three
+  // tests died on «Cannot read properties of null» — green on the author's mac,
+  // red in CI. The wrapper itself is plain sh and is what these tests are about.
+  const plist = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), ...args, '--kind', 'launchd'],
     { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   return plist.match(/<string>(cd [\s\S]*?)<\/string>/)[1]
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
