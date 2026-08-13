@@ -34,7 +34,7 @@ fatal or major finding in the same area two rounds running.
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
 | 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | run the drill with a fresh read-only subagent; **the orchestrator records the verdict**, because the drill agent cannot write | partly — «resumable enough to start, not resumable enough to close»; its seven findings are fixed, the re-drill is pending | `docs/reviews/2026-08-13.md` § Cold-start drill |
-| 5 | Verification is not self-service and not same-model-only: the skeptic can be a different model, named with commands that exist here | `command -v` for each named tool; one claim actually refereed by it | partly — the doctrine is in `references/critics.md`, `codex` and `gemini` are both present, the referee run is in flight | `decisions.md`, «Reviewers may be a DIFFERENT MODEL» |
+| 5 | Verification is not self-service and not same-model-only: the skeptic can be a different model, named with commands that exist here | `command -v` for each named tool; one claim actually refereed by it | yes | `codex exec --sandbox read-only` refuted the central claim about `prove.mjs` with 5 invocations, 3 of them missed by four same-model reviewers — `docs/reviews/2026-08-13.md` § Round 2; doctrine in `references/critics.md` |
 | 6 | The cost of a configured MCP server is measured, or the choice not to measure it is recorded with its cost | an entry in `decisions.md` naming what stays unmeasured and why | yes | `decisions.md`, «Not built: `tools.mjs --cost`» — and a landed test refuses that flag, so «measured» cannot be a typo |
 
 ## Parked — blocked on the owner
@@ -48,7 +48,8 @@ fatal or major finding in the same area two rounds running.
 | round | reviewers | fatal | major | minor | outcome |
 |---|---|---:|---:|---:|---|
 | 1 | guard-can-fire · reachability · honesty auditor · cold-start drill — all read-only, all Opus | 6 | 11 | 10 | every fatal reproduced against a running script; all fixed and pinned before landing (`docs/reviews/2026-08-13.md`) |
-| 2 | re-review of the fixes · cross-model referee (`codex exec --sandbox read-only`) | in flight | | | fixes are where self-inflicted defects live |
+| 2 | cross-model referee (`codex exec --sandbox read-only`) | 0 | 1 (a guard that refused honest checks and missed dishonest ones) | 0 | refuted the central claim; the fix DELETED the useless half of the guard |
+| 2 | re-review of the fixes (same-model, read-only) | in flight | | | fixes are where self-inflicted defects live |
 
 ## Iteration log
 
@@ -61,3 +62,6 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 0 · 2026-08-13T14:46:39Z
 - **prove** `npm run verify` → 0 · 2026-08-13T14:48:34Z
 - **prove** `npm run verify` → 0 · 2026-08-13T14:49:35Z
+- **prove** `npm run verify` → 0 · 2026-08-13T14:51:14Z
+- **I5** — the cross-model referee's five cases: three shell forms that exited 0
+  on a failing check, two honest checks that were refused. The guard shrank.

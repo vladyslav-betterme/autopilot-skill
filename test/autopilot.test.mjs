@@ -440,11 +440,6 @@ test('the piped form reports 0 for a failing check; the runner reports the truth
   assert.equal(proveStatus(d, ['--', 'false']), 1, 'the runner adopted the pipe\'s answer');
 });
 
-test('a shell-shaped check is refused at the argument, not run and then explained', () => {
-  const d = tmp();
-  assert.throws(() => prove(d, ['--', 'true', '|', 'tail']), /refusing to run a shell-shaped check/);
-});
-
 test('a check that disagrees with itself is flaky, and cannot mark a criterion met', () => {
   const d = tmp();
   fs.writeFileSync(path.join(d, 'flip.sh'), '#!/bin/bash\nn=$(cat n 2>/dev/null || echo 0)\necho $((n+1)) > n\nexit $((n % 2))\n', { mode: 0o755 });
@@ -488,9 +483,31 @@ test('a pipe inside the npm script is refused — argv cannot see it', () => {
   assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /the check itself is piped/);
 });
 
-test('a pipe inside sh -c is refused — the guard walked around in one argument', () => {
+test('a COMPOUND shell check is refused — its status is the last command\'s', () => {
+  // A cross-model referee refuted the earlier guard, which only looked for `|`:
+  // `test -s dist/app.js; echo checked` fails and exits 0 because echo always
+  // works, and `a & b & wait` exits 0 because bare wait does.
   const d = tmp();
-  assert.throws(() => prove(d, ['--', 'sh', '-c', 'false | tail']), /shell-shaped check/);
+  for (const script of [
+    'false | tail',
+    'test -s dist/app.js; echo artifact-checked',
+    'if test -s dist/app.js; then echo ok; fi',
+    'test -s a & test -s b & wait',
+  ]) {
+    assert.throws(() => prove(d, ['--', 'sh', '-c', script]), /compound shell check/, script);
+  }
+});
+
+test('&&, || and a literal pipe as DATA are not refused', () => {
+  // The other half of the same refutation: `test -s README.md || exit 1` is
+  // honest and was refused, and so was `grep -Fq '|' file`, where the pipe is
+  // grep's data. Without a shell there is nothing to walk around — the old
+  // token list could only ever fire on inputs that were already honest.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'README.md'), 'has a | in it\n');
+  assert.equal(proveStatus(d, ['--', 'sh', '-c', 'test -s README.md || exit 1']), 0);
+  assert.equal(proveStatus(d, ['--', 'grep', '-Fq', '|', 'README.md']), 0);
+  assert.equal(proveStatus(d, ['--', 'sh', '-c', 'false && true']), 1, '&& must still report the failure');
 });
 
 test('STOP is found from a subdirectory — a monorepo check runs from one', () => {

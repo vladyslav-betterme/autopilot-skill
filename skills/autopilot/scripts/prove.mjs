@@ -75,18 +75,34 @@ for (let i = 0; i < sep; i++) {
  * the mistake at the moment someone types it — but the guard that matters is
  * the next one.
  */
-const SHELLISH = ['|', ';', '&&', '||', '>', '>>', '2>&1', '&'];
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
-// `prove.mjs -- sh -c 'false | tail'` was the whole guard walked around in one
-// argument, and the ledger then rendered it as `sh -c false | tail`, which a
-// later reader cannot tell from a genuine pipe. If the program IS a shell, its
-// script is argv and readable — so read it.
-const bad = SHELLS.has(path.basename(cmd[0] ?? ''))
-  ? cmd.filter((a) => a.includes('|'))
-  : cmd.filter((a) => SHELLISH.includes(a));
-if (bad.length) {
-  die(`refusing to run a shell-shaped check: ${bad.join(' ')}\n` +
-    'A pipe reports the LAST command\'s status. Run the check alone; redirect the whole prove.mjs call instead.');
+/**
+ * A COMPOUND shell script reports its LAST command's status, whatever happened
+ * earlier — so if the program is a shell, its script is argv and gets read.
+ *
+ *   `|`  a pipe            — `tsc | tail` is tail's status
+ *   `;`  a sequence        — `test -s dist/app.js; echo checked` is echo's, and echo always works
+ *   `&`  a background job  — `a & b & wait` is wait's, which is 0
+ *
+ * `&&` and `||` are NOT here: they propagate failure, which is the whole
+ * difference. Matching them was a false positive that refused an honest
+ * `test -s README.md || exit 1`.
+ *
+ * There is deliberately NO check on the tokens of a non-shell command. Without
+ * a shell, `['false','|','tail']` already exits 1 — the old token list could
+ * only ever fire on inputs that were already honest, while refusing a perfectly
+ * good `grep -Fq '|' README.md`. Both halves of that were found by reviewers:
+ * one that the guard caught nothing real, one that it caught the wrong thing.
+ */
+const COMPOUND = /(^|[^|])\|([^|]|$)|;|(^|[^&])&([^&]|$)/;
+const shellScript = SHELLS.has(path.basename(cmd[0] ?? ''))
+  ? cmd.slice(1).find((a) => !a.startsWith('-'))
+  : null;
+if (shellScript && COMPOUND.test(shellScript)) {
+  die(`refusing a compound shell check: ${JSON.stringify(shellScript)}\n` +
+    'A script joined by `|`, `;` or `&` exits with its LAST command\'s status, so a failure\n' +
+    'earlier in it is invisible. Run the check itself, or move the script into a file whose\n' +
+    'own exit code is the answer (`&&` is fine — it propagates failure).');
 }
 
 /**
