@@ -101,6 +101,20 @@ install. If the project matches no niche in the catalogue, `any` alone is the
 correct answer — and `find-skills` is the entry point for a niche the catalogue
 is thin on (research, infra, data are thin today).
 
+**Then measure what you just spent.** `skill-cleaner` comes with the `any` set
+and is how «choose, do not hoard» stops being advice:
+
+```bash
+node --experimental-strip-types <skills-root>/skill-cleaner/scripts/skill-cleaner.ts \
+  --root .agents/skills --root-only --no-logs
+```
+
+It reports the budget the installed descriptions occupy, duplicates (two skills
+answering one question — the defect this loop hunts, one level up), and long
+descriptions worth compressing. **Act on it**: uninstall what this project does
+not use, and merge a duplicate rather than keeping both. An audit you read and
+ignore costs the same context as no audit.
+
 Then, throughout: what you learn here becomes a skill of its own (§5), written
 by the loop and used the same session.
 
@@ -263,8 +277,13 @@ is a coincidence you will over-fit. Three is the first time the pattern survived
 a situation you did not design it for — and the three-time rule is what stops
 this loop from filling a repo with advice nobody follows.
 
-Delete one when its advice has been wrong twice, or when the thing it guards
-became structural. A rule enforced by a type does not need a skill.
+**Re-run `skill-cleaner` after each one you write.** The loop only ever ADDS
+skills, and every description it adds is paid on every turn from then on. The
+audit is what turns that into a decision instead of a drift.
+
+Delete one when its advice has been wrong twice, when `skill-cleaner` shows
+nothing has used it, or when the thing it guards became structural. A rule
+enforced by a type does not need a skill.
 
 ## 6. Stop and ask
 

@@ -8,7 +8,7 @@ It is portable because it asks the work what «done» means instead of assuming,
 and it does not stop until that answer is satisfied.
 
 [![verify](https://github.com/vladyslav-betterme/autopilot-skill/actions/workflows/verify.yml/badge.svg)](https://github.com/vladyslav-betterme/autopilot-skill/actions/workflows/verify.yml)
-[![tests](https://img.shields.io/badge/tests-36-brightgreen.svg)](test/autopilot.test.mjs)
+[![tests](https://img.shields.io/badge/tests-37-brightgreen.svg)](test/autopilot.test.mjs)
 [![dependencies](https://img.shields.io/badge/dependencies-0-blue.svg)](package.json)
 [![node](https://img.shields.io/badge/node-%E2%89%A520.11-blue.svg)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
@@ -144,6 +144,11 @@ It refuses to install everything: every skill's description costs context on
 **every** turn, so a hundred skills is not a hundred capabilities — it is a
 smaller window and a model that skims.
 
+That budget is then **measured, not assumed**: `skill-cleaner` ships in the
+`any` set, and the loop runs it after arming and after every skill it writes —
+reporting what the installed descriptions cost, what duplicates what, and what
+nothing has used. Uninstall follows from the report.
+
 <details>
 <summary><b>The eight sources it draws from</b></summary>
 
@@ -223,7 +228,7 @@ trigger.
 ## Tests
 
 ```bash
-npm test          # 36 tests · no install step · no dependencies
+npm test          # 37 tests · no install step · no dependencies
 ```
 
 They are not decoration. Most of them pin defects a five-lens review council

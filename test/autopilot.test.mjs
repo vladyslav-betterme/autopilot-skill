@@ -419,3 +419,12 @@ test('the skill name is not the description that preceded it', () => {
   newSkill(d, ['-d', DESC, 'after-the-flag']);
   assert.ok(fs.existsSync(path.join(d, '.agents', 'skills', 'after-the-flag', 'SKILL.md')));
 });
+
+test('the context-budget audit ships with the always-useful set', () => {
+  // «Choose, do not hoard» is advice until something counts. skill-cleaner is
+  // what counts, so it cannot be a niche extra: the loop only ever ADDS skills,
+  // and every description is paid on every turn from then on.
+  const catalog = JSON.parse(run('skills.mjs', tmp(), ['--json']));
+  const anySet = catalog.flatMap((s) => s.skills).filter(([, t]) => t.split(' ').includes('any'));
+  assert.ok(anySet.some(([n]) => n === 'skill-cleaner'), anySet.map(([n]) => n).join(', '));
+});

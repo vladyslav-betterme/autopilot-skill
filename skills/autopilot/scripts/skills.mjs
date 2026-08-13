@@ -122,7 +122,7 @@ const LIBRARY = [
     repo: 'steipete/agent-scripts',
     what: 'A large grab-bag — install single skills from it, never the whole set.',
     skills: [
-      ['skill-cleaner', 'skills', 'Audit the context budget your installed skills cost.'],
+      ['skill-cleaner', 'any skills', 'Audit what the installed set costs in context, and what nothing uses.'],
       ['github-deep-review', 'review git', 'Deep PR review.'],
       ['github-project-triage', 'plan git', 'Triage an issue backlog.'],
       ['browser-use', 'web browser', 'Drive a real browser.'],
