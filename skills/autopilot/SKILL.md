@@ -285,6 +285,38 @@ Delete one when its advice has been wrong twice, when `skill-cleaner` shows
 nothing has used it, or when the thing it guards became structural. A rule
 enforced by a type does not need a skill.
 
+## 5b. The loop must own itself
+
+**Every iteration ends one of exactly two ways: a new wakeup is scheduled, or
+the loop is declared over out loud.** There is no third option, and «I just
+stopped calling it» is not a stop — it is the loop dying while everyone assumes
+it is running.
+
+This is written here because it happened. A loop ran for a day on a 25-minute
+self-scheduled wakeup, then one iteration ended with a report and no re-arm.
+Nothing announced it. The work continued only because the human happened to keep
+typing «continue» faster than the timer would have fired — so the failure was
+invisible until they asked why the timer had stopped. **A mechanism that depends
+on the agent remembering to re-arm it is not a mechanism; it is discipline
+wearing the costume of one.**
+
+**Cadence: 5 minutes by default.** Long gaps were chosen to «leave room to
+intervene», which is the wrong trade: the human can interrupt at any moment
+anyway, and a long timer mostly buys dead air. Go longer only when waiting on
+something that genuinely moves slowly — a CI run, a deploy, a remote queue —
+and say which.
+
+**Be honest about what the wakeup is worth.** A self-scheduled wakeup lives
+inside the session: close the window and it is gone. That is a timer in a
+conversation, not autonomy. Real unattended running needs a carrier that
+outlives the session — a cloud schedule, or a daemon-backed agent runner whose
+stopping condition is the gate. When the work genuinely must survive the human
+leaving, say so and set one up instead of pretending the wakeup covers it.
+
+**Draw the next item from the ledger, not from memory.** If the only thing that
+knows what comes next is this context window, the loop cannot survive a cold
+start — and a loop that cannot survive a cold start is a conversation.
+
 ## 6. Stop and ask
 
 Autonomy is not permission. Stop, say what you would do, and wait:
