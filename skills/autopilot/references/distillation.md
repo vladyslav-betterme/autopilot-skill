@@ -1,7 +1,8 @@
 # Turning repeated wins into skills
 
 After a pattern has worked **three times**, it stops being a habit and becomes a
-skill.
+skill. The count lives in `wins.md` — that column is the whole reason the ledger
+counts instead of merely listing.
 
 ## Why three
 
@@ -21,7 +22,17 @@ which is worse than no skill: it trains the reader to skim.
 - **What it does NOT cover.** Every guard has an edge it cannot see; writing it
   down is the difference between a limitation and a lie.
 
-## Where it goes
+## Where it goes, and how it gets used the same day
+
+```bash
+node <skill>/scripts/new-skill.mjs <name> -d "<when to use it, in trigger words>"
+node <skill>/scripts/new-skill.mjs <name> -d "..." < body.md   # you write the body
+```
+
+It writes into the shared skills home and symlinks into every agent directory
+the project has — the same layout an installer produces — then prints how to
+apply it **in the session that wrote it**. A skill that waits for someone to
+remember to copy it is a skill nobody uses.
 
 Beside the others, in a **tracked** directory, symlinked into whatever path the
 harness loads from (`.claude/skills/`, `.agents/skills/`, …). A skill that lives
@@ -35,10 +46,10 @@ larger than the bug: **a tool that recommends a layout must be tested against
 that layout**, and «create only what is missing» has to be enforced at the write
 (`flag: 'wx'`), not only by a check that can be wrong.
 
-**Then prove it loaded.** Ask the agent to list its skills. On the project this
-came from, operating rules were written into a file the harness never read, and
-the mistake was invisible until someone asked. Rules in a location nothing loads
-are not rules — the same failure as a guard that cannot fire.
+**Then prove it loaded.** Ask the agent to list its skills. Operating rules have
+been written into a file the harness never read, invisible until someone asked.
+Rules in a location nothing loads are not rules — the same failure as a guard
+that cannot fire.
 
 ## When to delete one
 

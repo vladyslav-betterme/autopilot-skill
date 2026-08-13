@@ -1,36 +1,54 @@
 ---
 name: autopilot
 description: >-
-  Use to run autonomous development on ANY project — «працюй автономно»,
-  «продовжуй», /loop, an unattended multi-hour campaign, or when asked to set a
-  repo up so an agent can drive it. Discovers the project's own gates, keeps a
-  ledger of what worked and what failed, has every success attacked by a critic
-  that is not you, and distils repeated wins into new skills. Backend, frontend,
-  infrastructure — the loop is the same; only the gate differs.
+  Use to run autonomous work on ANY project, of any kind, until a goal is
+  actually met — «працюй автономно», «продовжуй», /loop, an unattended
+  campaign, or a request to set a repo up so an agent can drive it. Code,
+  documents, data, research, infrastructure, ops: it discovers what «done»
+  means here, arms itself with the public skills this project's niche needs,
+  loops until every done-criterion is verified by someone that is not you,
+  records every win, failure and decision, and writes repeated wins into new
+  skills it then uses in the same session.
 ---
 
 # Autopilot
 
-An autonomous development loop that is portable because it **asks the project
-what «done» means** instead of assuming.
+An autonomous loop that is portable because it **asks the work what «done»
+means** instead of assuming — and does not stop until that answer is satisfied.
 
-Two claims this skill exists to make impossible:
+Three claims this skill exists to make impossible:
 
 - «It works» when nothing ran it.
-- «It's done» when the only judge was the model that wrote it.
+- «It's done» when the only judge was the one who did it.
+- «I worked on it» with no record of what was tried, what failed, and why.
+
+The subject does not matter. A refactor, a migration, a report, a dataset, a
+render farm, a cluster: the loop below is identical and only the **check**
+differs.
 
 ## 0. Bootstrap — once per project
 
 ```bash
-node <skill>/scripts/discover.mjs        # gates, memory homes, danger signals
+node <skill>/scripts/discover.mjs        # checks, memory homes, danger signals
 node <skill>/scripts/bootstrap.mjs       # creates the ledger if absent
+node <skill>/scripts/skills.mjs          # the skill library — pick this project's niches
 ```
 
-`discover` prints the project's own gate command. **That command is the
-definition of done for every iteration below.** If it prints `gates: []`, stop
-and say so: a loop without a gate is a loop that stops when the model is
-satisfied, which is the failure mode this whole skill is built against. Offer to
-write the first gate instead of proceeding without one.
+`discover` prints the project's own check command. **That command is the
+definition of done for every iteration below.**
+
+If it prints `checks: []`, the project has no automatic check — that is common
+and not a blocker, but it is also **not permission to judge your own work**.
+Agree on an acceptance check *before* iteration one, and write it into the goal
+(§1). Any of these is a check; «I reviewed it and it looks right» is not:
+
+| The work | A check that is not your own opinion |
+|---|---|
+| code | a command that exits 0, run in the foreground |
+| a document | a claim-by-claim list with a source or a command per claim |
+| data | a query someone else can re-run that returns the expected shape |
+| infra / ops | an observation from the system itself, before and after |
+| research | the question restated as something falsifiable, and what would refute it |
 
 Read what discovery found before touching anything:
 
@@ -39,99 +57,201 @@ Read what discovery found before touching anything:
   `AGENTS.md`. A second home for one kind of knowledge is the most common way an
   agent makes a repo worse.
 - **`signals.envFilesPresent`** and **`signals.remote`** — before the first
-  iteration, **ask** whether the dev environment points at production. On the
-  project this skill was extracted from it did, and nothing in the repo said so.
-  Assume yes until told otherwise.
+  iteration, **ask** whether the working environment points at production. It has
+  been, on projects where nothing in the repo said so and every local run looked
+  harmless. Assume yes until told otherwise.
 - **`signals.dirty`** — uncommitted work is somebody's. Branch, never build on top.
 
-## 1. The iteration
+### Arm yourself before iteration one
 
-One iteration = one landed change, gated, reviewed, recorded. Not one file, not
-one turn.
+`skills.mjs` is the shortlist of public skills worth having, tagged by niche —
+process and review on every project, then web, React, database, documents,
+native, infrastructure, research as the project actually needs them.
 
-**Pick.** From the project's own backlog if it has one; otherwise highest
-risk×reach. Write the goal in one falsifiable sentence *before* touching code.
-«Make X better» cannot be falsified. «No path spends money without an explicit
-tap, and each guarantee is held by a type or a failing test» can.
+```bash
+node <skill>/scripts/skills.mjs                    # the catalogue and its tags
+node <skill>/scripts/skills.mjs --install any      # the always-useful set
+node <skill>/scripts/skills.mjs --install react,perf,db   # this project's niches
+```
 
-**Understand before you shorten.** Trace the real flow end to end. Then, before
-writing a new function, ask whether one already answers that question — see
-`references/premise-check.md`, which is the single highest-yield habit in this
-skill and the one that took longest to learn.
+**Choose, do not hoard.** Every installed skill's description is loaded on every
+turn: a hundred skills is not a hundred capabilities, it is a smaller window and
+a model that skims. Install what this project is, and read what you installed —
+they are third-party and they run with your permissions.
 
-**Build** the smallest thing that is actually correct. Root cause, not the path
-the ticket names: grep every caller first.
+Then, throughout: what you learn here becomes a skill of its own (§5), written
+by the loop and used the same session.
 
-**Prove.** Run the discovered gate, **in the foreground, reading the exit code in
-the shell that ran it.** Three ways it lies, all observed:
+## 1. The goal — the thing the loop runs until
+
+Before iteration one, write down **one falsifiable sentence** and **2–5
+done-criteria**. Into `goal.md`, or whatever discovery found already holds this.
+
+- Falsifiable: «make X better» cannot be. «Every path that spends money is
+  behind an explicit tap, and each one is held by a type or a failing test» can.
+- Each criterion must be checkable **by someone who is not you** — the same bar
+  as §0. A criterion only you can confirm is not a criterion; rewrite it.
+- Unknowns are allowed, as criteria of their own: «we know whether N is the
+  cause» is a legitimate done-criterion for research.
+
+**The loop then runs until every criterion is met AND verified.** Not until the
+model feels finished, not until the critics go quiet — they never do. Each
+iteration ends by marking in `goal.md` which criterion moved and what proves it.
+
+Stop the loop early only for the reasons in §7 (ask) and §8 (thrash, context).
+
+## 2. The iteration
+
+One iteration = one landed change, checked, verified, recorded. Not one file,
+not one turn.
+
+**Pick.** From the goal's unmet criteria. If several are open, take the one
+whose failure would invalidate the most other work — order by risk×reach, not by
+what is easy.
+
+**Understand before you shorten.** Trace the real thing end to end. Then, before
+building anything new, ask whether it already exists — see
+`references/premise-check.md`, the single highest-yield habit in this skill and
+the one that took longest to learn.
+
+**Build** the smallest thing that is actually correct. Root cause, not the
+symptom the request names: find every other place with the same shape first, and
+fix it where they all pass through.
+
+**Prove.** Run the discovered check, **in the foreground, reading the exit code
+in the shell that ran it.** Three ways a check lies, all observed:
 
 | | |
 |---|---|
-| `gate \| tail` | reports `tail`'s status |
-| `gate > log; echo "EXIT=$?"` | `;` makes the status the LAST command's — always 0 |
+| `check \| tail` | reports `tail`'s status |
+| `check > log; echo "EXIT=$?"` | `;` makes the status the LAST command's — always 0 |
 | a backgrounded wrapper | the completion notification reports the **wrapper** |
 
-Every new guard needs a test you have **watched fail** without the fix. Delete
-the fix, run it, see red, restore. A guard that cannot fire is worse than none:
-it reads as proof the case is handled.
+Every new guard needs a demonstration you have **watched fail** without the fix.
+Delete the fix, run it, see red, restore. A guard that cannot fire is worse than
+none: it reads as proof the case is handled. The same rule outside code — if the
+check cannot fail, it is decoration.
 
-**Review.** Non-trivial change → `references/critics.md`. Your own fixes are the
-second-largest source of defects; a review round after the fixes is not optional.
+**Verify — §3. Never skip it, never do it yourself.**
 
-**Land.** Stage by name — never `-A`/`-u`/`.`, they pick up local-only edits and
-`-u` misses new files. Branch → PR → check the deploy actually went green. A
-local green build is not a deploy.
+**Land** however this project accepts work: commit and PR, publish, apply, hand
+over. Stage by name — never `-A`/`-u`/`.`, they pick up local-only edits and `-u`
+misses new files. Then **check the thing actually landed**: a green local run is
+not a deploy, and a merged PR is not a live change.
 
-**Record.** `references/ledger.md` — what worked, what failed, and *why*, in the
-project's existing memory home.
+**Record — §4.** Then update `goal.md` and start the next iteration.
 
-## 2. The ledger is the point
+## 3. Verify with someone who did not do the work
 
-A loop that does not write down what it learned repeats it. Three files, created
-by `bootstrap.mjs` in whatever home discovery found:
+This is not the same as running the check, and it is not optional.
 
-- **`decisions`** — a choice and its cost. Includes choices to do NOTHING: «not
-  removed, accepted risk, because the cure breaks local dev» is a decision and
-  saves the next session from re-opening it.
-- **`defect-patterns`** — failures classified by CAUSE, not by file. The file
-  changes; the cause repeats. Count per subsystem: a falling total hides a
-  diverging file.
-- **`changelog`** — what shipped. If the project already has one, append to it.
+**Your own fixes are the second-largest source of defects** — measured at
+58–68 % of all findings in later review rounds. You cannot see them, because
+writing them is what ruled out seeing them.
 
-## 3. Distil skills from repeated wins
+- **Every iteration: at least one subagent** that did not do the work, given the
+  exact scope, **read-only**, whose job is to REFUTE the claim that it is done.
+  «Confirmed» from a reviewer who did not run anything does not count.
+- **Non-trivial change: the council in `references/critics.md`** — N hunters,
+  one lens each, then one skeptic per finding. That file also carries the prompt
+  rules that measurably changed what came back, and the two cheapest agents
+  (convergence analyst, honesty auditor) that return the most.
+- **After fixing what review found, review again.** The fixes are where the
+  self-inflicted defects live.
 
-After a pattern has worked **three times**, it stops being a habit and becomes a
-skill. Write it as a sibling `SKILL.md` with a `description` naming the trigger
-words that should summon it. See `references/distillation.md`.
+All reviewers are read-only, every time, said explicitly: not even a command
+meant to prove a bypass. A skeptic once ran a production migration script to
+disprove a claim about a migration guard, and it was inert only by luck.
 
-**Do not distil after one success.** One success is luck with a good story. The
-three-time rule is what stops this skill from filling a repo with advice.
+## 4. Record — wins, failures, decisions, history
 
-## 4. Stop and ask
+A loop that does not write down what it learned repeats it. But a loop that
+records everything buries the part that mattered, so each file has an admission
+bar (`references/ledger.md`). Created by `bootstrap.mjs` in whatever home
+discovery found — appended to if the project already has one:
+
+- **`goal.md`** — the goal, its criteria, and which are met with what evidence.
+  This is the loop's state: it is what lets a fresh session resume mid-campaign.
+- **`wins.md`** — what worked, and **how many times**. The count is the point:
+  three is the threshold at which a habit becomes a skill (§5).
+- **`failures.md`** — what failed, classified by **CAUSE, not by file or task**.
+  The task changes; the cause repeats. Count per area: a falling total hides one
+  area getting worse.
+- **`decisions.md`** — a choice and its cost. Including choices to do NOTHING:
+  «not removed, accepted risk, because the cure breaks local dev» is a decision
+  and saves the next session from re-opening it.
+- **`changelog.md`** — what shipped.
+
+**The rule that keeps all five honest:** before writing «X does not do Y» in a
+tracked file, run the check that would prove it and paste the output into the
+commit. Four false claims were caught that way in one campaign, all phrased as
+structural guarantees. That is the dangerous form — a hedge invites checking,
+an invariant does not.
+
+## 5. Write your own skills from wins — and use them immediately
+
+When an entry in `wins.md` reaches **three**, it stops being a habit and becomes
+a skill. Do not describe it in a doc nobody loads; write it:
+
+```bash
+node <skill>/scripts/new-skill.mjs <name> -d "<when to use it, in trigger words>"
+node <skill>/scripts/new-skill.mjs <name> -d "..." < body.md   # you write the body
+```
+
+It lands in the shared skills home and is symlinked into every agent directory
+this project has, so it is **live for the current session** — read the file it
+prints and apply it now, on the very next iteration. Waiting for a restart is
+how a skill becomes a file nobody opens.
+
+Three things or it will not fire (`references/distillation.md`):
+
+1. **A `description` naming the trigger words** — including the ones the person
+   actually says, in their language.
+2. **The incident, not the principle.** «Never trust a piped check» is
+   forgettable; «`… | tail` reports tail's status and shipped six red deploys
+   that read as green locally» is not.
+3. **What it does NOT cover.** Every guard has an edge it cannot see; writing it
+   down is the difference between a limitation and a lie.
+
+**Do not distil after one success.** One success is luck with a good story. Two
+is a coincidence you will over-fit. Three is the first time the pattern survived
+a situation you did not design it for — and the three-time rule is what stops
+this loop from filling a repo with advice nobody follows.
+
+Delete one when its advice has been wrong twice, or when the thing it guards
+became structural. A rule enforced by a type does not need a skill.
+
+## 6. Stop and ask
 
 Autonomy is not permission. Stop, say what you would do, and wait:
 
-- **Spending money** — generations, paid tiers, new infrastructure.
-- **Anything irreversible on production** — dropping or rewriting data, rotating
-  or deleting a secret, deleting user files. *Blanket approval is permission,
-  not information*: «do whatever you decide» is not knowledge of what is in the
-  245 GB you are about to delete.
+- **Spending money** — anything metered, a paid tier, new infrastructure.
+- **Anything irreversible, or anything on production** — deleting or rewriting
+  data, rotating or deleting a secret, sending something outward, deleting files.
+  *Blanket approval is permission, not information*: «do whatever you decide» is
+  not knowledge of what is in the 245 GB you are about to delete.
 - **Reversing a written directive.** That is a proposal, not a task.
 - **You are about to claim something you cannot reproduce on demand.** Say «not
   verified» instead.
 
-## 5. Stop the loop when
+## 7. Stop the loop when
 
-Not «the critics found nothing» — they always find something, including in their
-own last fix. Stop when all four hold:
+The goal decides, not the mood. Stop when **every done-criterion in `goal.md` is
+met and verified by §3** — and, for a campaign of many review rounds, when all
+four of these hold too:
 
-1. No fatal finding in the same subsystem two rounds running. ← the one that matters
+1. No fatal finding in the same area two rounds running. ← the one that matters
 2. Self-inflicted share of findings below ~30 %.
-3. Every remaining finding is minor **and** in a subsystem whose count is falling.
-4. Every claim in a tracked doc has a command in the commit that reproduces it.
+3. Every remaining finding is minor **and** in an area whose count is falling.
+4. Every claim in a tracked doc has a command or a source that reproduces it.
 
-## 6. Context
+**Also stop — and report — when the loop is not moving.** Two consecutive
+iterations with no criterion advanced is thrash, not persistence: say what is
+blocking, what you tried, and what you need. A loop that keeps going on a wrong
+premise burns more than one that stops.
 
-At **80 %** of the window: stop the iteration, write the state into the tracked
-doc, commit what is green, say where you stopped. Pushing past it produces the
-failure where the summary is confident and the work is half-landed.
+## 8. Context
+
+At **80 %** of the window: stop the iteration, write the state into `goal.md`
+and the ledger, commit what is green, say where you stopped. Pushing past it
+produces the failure where the summary is confident and the work is half-landed.
