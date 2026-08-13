@@ -18,8 +18,10 @@ Backend, frontend, infrastructure — the loop is the same; only the gate differ
 
 ## Install
 
-**With the [`skills`](https://github.com/vercel-labs/skills) CLI** — it detects
-the agents you have installed and links the skill into each:
+**With the [`skills`](https://github.com/vercel-labs/skills) CLI** — run it in
+the project you want driven; it lands the skill in `.agents/skills/autopilot`
+and links it into every agent it detects (Claude Code, Codex, Gemini CLI,
+Copilot, Zed …):
 
 ```bash
 npx skills add vladyslav-betterme/autopilot-skill
@@ -42,18 +44,20 @@ Say «працюй автономно», «продовжуй», run `/loop`, or
 campaign. The skill fires on its own description; you can also invoke it by
 name.
 
-Once per project, before the first iteration:
+Once per project, from the project root, before the first iteration
+(`<skill>` = `.agents/skills/autopilot` after a CLI install, or wherever you
+cloned it):
 
 ```bash
-node skills/autopilot/scripts/discover.mjs   # gates, memory homes, danger signals
-node skills/autopilot/scripts/bootstrap.mjs  # creates the ledger, only if absent
+node <skill>/scripts/discover.mjs    # gates, memory homes, danger signals
+node <skill>/scripts/bootstrap.mjs   # creates the ledger, only if absent
 ```
 
 `discover` is read-only and prints JSON. `bootstrap` is idempotent and **never
 overwrites** — it prints what it deliberately left alone.
 
 ```jsonc
-// node skills/autopilot/scripts/discover.mjs   (abridged)
+// node <skill>/scripts/discover.mjs   (abridged)
 {
   "project":     { "kind": "node", "packageManager": "npm", "gates": ["npm run verify"] },
   "memoryHomes": ["CLAUDE.md", "docs/learnings", "CHANGELOG.md"],
