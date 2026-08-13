@@ -153,7 +153,8 @@ IS the trigger.
 | [`scripts/skills.mjs`](skills/autopilot/scripts/skills.mjs) | The skill library, tagged by niche. Installs on request, never wholesale. |
 | [`scripts/new-skill.mjs`](skills/autopilot/scripts/new-skill.mjs) | Write a skill from a win and link it where the harness loads from. |
 
-Zero dependencies. Plain Node ≥ 20.11, anywhere Node runs.
+Zero dependencies. Plain Node ≥ 20.11. `new-skill.mjs` links skills with
+symlinks, which on Windows need Developer Mode or an elevated shell — everything else is portable.
 
 ## The parts worth stealing even if you never install it
 
