@@ -45,6 +45,7 @@ iteration one.
 | points at production? | <!-- asked and answered, not assumed --> |
 | version control | <!-- git branch, or «none» — and where the copy of the inputs lives --> |
 | skills installed | <!-- what was added for this project, and why --> |
+| tools reachable | <!-- the MCP servers / plugins / CLIs this loop CALLED ONCE and saw work, what it had to build, and what is parked on a human login --> |
 
 ## The goal, in one falsifiable sentence
 

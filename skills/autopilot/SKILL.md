@@ -5,10 +5,12 @@ description: >-
   actually met — «працюй автономно», «продовжуй», /loop, an unattended
   campaign, or a request to set a repo up so an agent can drive it. Code,
   documents, data, research, infrastructure, ops: it discovers what «done»
-  means here, arms itself with the public skills this project's niche needs,
-  loops until every done-criterion is verified by someone that is not you,
-  records every win, failure and decision, and writes repeated wins into new
-  skills it then uses in the same session.
+  means here, arms itself with the skills AND the reach this project needs —
+  public skills, MCP servers, plugins, connectors, and writing the MCP server
+  itself when none exists for the thing it has to drive — loops until every
+  done-criterion is verified by someone that is not you, records every win,
+  failure and decision, and writes repeated wins into new skills it then uses
+  in the same session.
 ---
 
 # Autopilot
@@ -36,6 +38,7 @@ root.
 node <skill>/scripts/discover.mjs        # checks, memory homes, danger signals
 node <skill>/scripts/bootstrap.mjs       # creates the ledger if absent
 node <skill>/scripts/skills.mjs          # the skill library — pick this project's niches
+node <skill>/scripts/tools.mjs           # what this machine can already REACH: MCP servers, plugins
 ```
 
 `discover` prints the project's own check command. **That command is the
@@ -115,8 +118,36 @@ descriptions worth compressing. **Act on it**: uninstall what this project does
 not use, and merge a duplicate rather than keeping both. An audit you read and
 ignore costs the same context as no audit.
 
+### Skills are half of it — the other half is reach
+
+`skills.mjs` says what the agent KNOWS. `tools.mjs` says what it can TOUCH: the
+MCP servers configured across every harness on this machine, the plugins that
+carry more, and — the part that matters — what nothing on disk can tell you.
+
+```bash
+node <skill>/scripts/tools.mjs
+```
+
+**A capability you lack is not a reason to narrow the goal.** It is a ladder,
+and the loop is expected to climb it (`references/tooling.md`):
+
+| | |
+|---|---|
+| already reachable? | the session's own tool list, never a config file — then call it once, because a configured server that fails to launch reads exactly like «no such tool» |
+| the app's own CLI? | `aerender`, `osascript`, a vendor CLI. **This rung is skipped most and is right most** — a shell command needs no server, no schema and no restart |
+| a public MCP server? | search before writing; installing one runs somebody's code with your permissions, so announce it like a skill install |
+| a connector? | account-level OAuth an unattended agent cannot complete → PARK it (§6): name the connector, the click, and what you did instead |
+| none of the above | write it: `node <skill>/scripts/new-mcp.mjs <name> -d "<what it drives>"` |
+
+**The one that will bite:** a harness reads its MCP config at STARTUP, so a
+server written mid-run is invisible to the session that wrote it. That is why
+the scaffold is *also* a CLI — `node server.mjs --call <tool> '<json>'`, the
+same handlers. Use that form now and let the next session get the server.
+«Continue after a restart» is a stalled loop holding a file.
+
 Then, throughout: what you learn here becomes a skill of its own (§5), written
-by the loop and used the same session.
+by the loop and used the same session — and a capability it lacked becomes a
+tool of its own, used the same way.
 
 ## 1. The goal — the thing the loop runs until
 
@@ -129,6 +160,17 @@ done-criteria**. Into `goal.md`, or whatever discovery found already holds this.
   as §0. A criterion only you can confirm is not a criterion; rewrite it.
 - Unknowns are allowed, as criteria of their own: «we know whether N is the
   cause» is a legitimate done-criterion for research.
+- **A big goal is reached through small ones, and the criteria ARE that
+  decomposition** — each a slice that can be landed, checked and verified on its
+  own. A criterion too large for one iteration gets split into criteria of its
+  own; depth is fine, and every level keeps the same bar (checkable by someone
+  who is not you). A level that stops being falsifiable is a plan, not a
+  criterion.
+- **A capability you lack is a criterion, not a detour.** «The loop can drive X
+  headlessly, proven by one round-trip» goes in the table beside the work it
+  unblocks (`references/tooling.md`). Written down, building a tool is bounded
+  and its absence is visible; not written down, it becomes an afternoon that
+  produced no criterion and reads as progress.
 - **If nobody gave you a goal** — «продовжуй» and nothing else — the first
   iteration's ONLY output is a proposed `goal.md` and the question for the
   human. A criterion you authored and then satisfied is claim #2 above, wearing
@@ -325,7 +367,10 @@ Autonomy is not permission. Stop, say what you would do, and wait:
 - **Anything irreversible, or anything on production** — deleting or rewriting
   data, rotating or deleting a secret, sending something outward, deleting files.
   *Blanket approval is permission, not information*: «do whatever you decide» is
-  not knowledge of what is in the 245 GB you are about to delete.
+  not knowledge of what is in the 245 GB you are about to delete. **A tool you
+  wrote yourself is not an exemption**: a handler that can spend or delete is the
+  same ask, and it is the easiest one to miss, because you were thinking about
+  the schema when you wrote it.
 - **Reversing a written directive.** That is a proposal, not a task.
 - **You are about to claim something you cannot reproduce on demand.** Say «not
   verified» instead.

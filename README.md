@@ -37,7 +37,7 @@ flowchart LR
     subgraph setup["&nbsp;once per project&nbsp;"]
         direction TB
         D["<b>discover</b> — the project's own<br/>check, homes, danger signals"]
-        S["<b>arm</b> — install the skills<br/>this niche needs"]
+        S["<b>arm</b> — the skills this niche needs,<br/>and the tools it can reach"]
         G["<b>goal</b> — one falsifiable sentence,<br/>criteria someone else can check"]
         D --> S --> G
     end
@@ -76,6 +76,7 @@ landed — `.agents/skills/autopilot` after the install above.
 node <skill>/scripts/discover.mjs      # what «done» means here, and what is dangerous
 node <skill>/scripts/bootstrap.mjs     # the ledger: goal · wins · failures · decisions · changelog
 node <skill>/scripts/skills.mjs        # the skill library — then install this project's niches
+node <skill>/scripts/tools.mjs         # what it can already REACH: MCP servers, plugins, and what nothing on disk knows
 ```
 
 Then say «працюй автономно», «продовжуй», run `/loop`, or ask for an unattended
@@ -187,6 +188,35 @@ refuses a name that already exists — including one held by a dangling symlink 
 and refuses a description under 40 characters, because the description **is** the
 trigger.
 
+## Reach, not only knowledge
+
+Skills change what the agent knows; they do not let it touch anything new.
+`tools.mjs` inventories what this machine can already reach — MCP servers across
+Claude Code, Cursor, VS Code, Gemini, opencode and Codex, plus plugins — and is
+explicit about what no config file can answer: connectors live in an account,
+a configured server that fails to launch reads exactly like «no such tool», and
+only a running session knows which tools a server exposes.
+
+When something has no server, the loop climbs a ladder instead of narrowing the
+goal: **already reachable → the app's own CLI → a public server → write one.**
+Rung two is the one that gets skipped and is usually right — After Effects has
+`aerender`, macOS has `osascript`, and a shell command needs no server at all.
+
+```bash
+node <skill>/scripts/new-mcp.mjs after-effects -d "drives AE through aerender — no public server covers it"
+```
+
+It scaffolds a zero-dependency stdio server, registers it, and — the part that
+matters for an unattended run — exposes the **same handlers as a CLI**:
+
+```bash
+node tools/after-effects-mcp/server.mjs --call render '{"comp":"Main"}'
+```
+
+A harness reads its MCP config at **startup**, so a server written mid-run is
+invisible to the session that wrote it. Without that CLI path, «I built the
+tool, continue after a restart» is a loop that stalled while producing a file.
+
 ## What's inside
 
 | File | What it carries |
@@ -200,6 +230,9 @@ trigger.
 | [`scripts/bootstrap.mjs`](skills/autopilot/scripts/bootstrap.mjs) | The ledger, in the project's **own** memory home, only what is missing. |
 | [`scripts/skills.mjs`](skills/autopilot/scripts/skills.mjs) | The skill library, tagged by niche. Installs on request, never wholesale. |
 | [`scripts/new-skill.mjs`](skills/autopilot/scripts/new-skill.mjs) | Write a skill from a win and link it where the harness actually loads from. |
+| [`references/tooling.md`](skills/autopilot/references/tooling.md) | The capability ladder — already reachable, the app's own CLI, a public server, then write one. Plus what a tool result is (untrusted input) and what a server costs (context, every turn). |
+| [`scripts/tools.mjs`](skills/autopilot/scripts/tools.mjs) | MCP servers and plugins across six harnesses — and the honest list of what nothing on disk can tell you. |
+| [`scripts/new-mcp.mjs`](skills/autopilot/scripts/new-mcp.mjs) | Write the server that does not exist, register it, and call it **now** — an MCP config is only read at startup. |
 | [`scripts/lib.mjs`](skills/autopilot/scripts/lib.mjs) | The questions two scripts both ask, asked in one place. |
 
 ## The parts worth stealing even if you never install it
@@ -228,7 +261,7 @@ trigger.
 ## Tests
 
 ```bash
-npm test          # 37 tests · no install step · no dependencies
+npm test          # 43 tests · no install step · no dependencies
 ```
 
 They are not decoration. Most of them pin defects a five-lens review council
@@ -268,6 +301,13 @@ It now goes red.
   `left alone` line before accepting what it created.
 - `skills.mjs` shells out to `npx skills` for installs, so that one command needs
   the network. Everything else is offline.
+- `tools.mjs` reads config **files**. It cannot see connectors, cannot tell you
+  whether a server starts, and does not know which tools one exposes — it says so
+  in its own output rather than implying coverage it does not have.
+- `new-mcp.mjs` registers into JSON config (`.mcp.json`, `.cursor/mcp.json`) and
+  **refuses** a TOML path rather than overwriting a Codex config; add that block
+  by hand. The scaffold is hand-rolled JSON-RPC on purpose — right for a handful
+  of tools, wrong for forty, where `mcp-builder` and the official SDK take over.
 - Zero dependencies, plain Node ≥ 20.11 — except that `new-skill.mjs` links with
   symlinks, which on Windows need Developer Mode or an elevated shell.
 

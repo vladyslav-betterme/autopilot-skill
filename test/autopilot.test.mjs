@@ -420,6 +420,96 @@ test('the skill name is not the description that preceded it', () => {
   assert.ok(fs.existsSync(path.join(d, '.agents', 'skills', 'after-the-flag', 'SKILL.md')));
 });
 
+/**
+ * Reach — the tools half. The loop stalls at capability in two ways that look
+ * identical from inside: it decides a thing is impossible when it is already
+ * configured, or it writes a second answer to a question something already
+ * answers. Both are checked here, plus the one that made `new-mcp.mjs` exist at
+ * all: a server written mid-run is useless to the session that wrote it unless
+ * the same handlers are callable without a restart.
+ */
+
+/** HOME is redirected: `tools.mjs` reads `~/.claude.json`, `~/.codex/…` and the
+ *  plugin list, so a test that did not isolate it would assert against whatever
+ *  the machine running it happens to have installed. */
+const toolsJson = (cwd) => JSON.parse(
+  execFileSync('node', [path.join(SCRIPTS, 'tools.mjs'), '--json'],
+    { cwd, encoding: 'utf8', env: { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')) } }),
+);
+
+test('MCP servers are found under every key a harness uses, not just one', () => {
+  // VS Code says `servers`, everyone else says `mcpServers`. A reader that knows
+  // one key reports «no MCP here» in an editor full of them — a false absence,
+  // which is the input to «I must build it».
+  const d = tmp();
+  fs.writeFileSync(path.join(d, '.mcp.json'), JSON.stringify({ mcpServers: { alpha: { command: 'node', args: ['a.mjs'] } } }));
+  fs.mkdirSync(path.join(d, '.vscode'));
+  fs.writeFileSync(path.join(d, '.vscode', 'mcp.json'), JSON.stringify({ servers: { beta: { url: 'https://example.test/mcp' } } }));
+  const found = toolsJson(d).servers.map((s) => s.name);
+  assert.deepEqual(found.sort(), ['alpha', 'beta']);
+});
+
+test('tools.mjs never claims to know what only a live session knows', () => {
+  // The failure this prevents is confident silence: a config file is a claim
+  // about disk, and a server that fails to launch reads exactly like «no such
+  // tool». If the script stops saying so, it becomes the thing it warns about.
+  const out = toolsJson(tmp());
+  assert.ok(out.blind.length >= 3, JSON.stringify(out.blind));
+  assert.match(out.blind.join(' '), /connector/i);
+});
+
+test('a scaffolded server answers a real MCP handshake — and says nothing to a notification', () => {
+  const d = tmp();
+  const made = run('new-mcp.mjs', d, ['after-effects', '-d', 'drives After Effects through aerender because no public server does']);
+  assert.match(made, /created   : tools\/after-effects-mcp\/server\.mjs/);
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8')).mcpServers['after-effects'],
+    { type: 'stdio', command: 'node', args: ['tools/after-effects-mcp/server.mjs'] },
+  );
+
+  const wire = [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } },
+    { jsonrpc: '2.0', method: 'notifications/initialized' }, // no id: answering this hangs real clients
+    { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'ping', arguments: { text: 'hi' } } },
+  ].map((m) => JSON.stringify(m)).join('\n') + '\n';
+  const replies = execFileSync('node', ['tools/after-effects-mcp/server.mjs'], { cwd: d, encoding: 'utf8', input: wire })
+    .trim().split('\n').map((l) => JSON.parse(l));
+
+  assert.equal(replies.length, 3, `the notification was answered:\n${JSON.stringify(replies, null, 2)}`);
+  assert.equal(replies.find((r) => r.id === 1).result.capabilities.tools !== undefined, true);
+  assert.deepEqual(replies.find((r) => r.id === 2).result.tools.map((t) => t.name), ['ping']);
+  assert.match(replies.find((r) => r.id === 3).result.content[0].text, /alive: hi/);
+});
+
+test('the same handlers run from the command line — the session that wrote it is not made to wait', () => {
+  // An MCP config is read at STARTUP. Without this path the loop writes a server
+  // it cannot call, reports progress, and stalls until a restart it will not get.
+  const d = tmp();
+  run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects through aerender because no public server does']);
+  const out = execFileSync('node', ['tools/ae-mcp/server.mjs', '--call', 'ping', '{"text":"now"}'], { cwd: d, encoding: 'utf8' });
+  assert.match(out, /alive: now/);
+});
+
+test('a second server for a job one already does is refused', () => {
+  const d = tmp();
+  const args = ['dupe', '-d', 'drives the same thing the first one drives, which is the point'];
+  run('new-mcp.mjs', d, args);
+  assert.throws(() => run('new-mcp.mjs', d, args), /already registered/);
+});
+
+test('a TOML config is refused BEFORE it is overwritten with JSON', () => {
+  // Codex keeps its servers in TOML. Registration writes JSON, so pointing it
+  // there would replace a working config with an object — the destructive case
+  // has to be refused at the argument, not apologised for in the epilogue.
+  const d = tmp();
+  const toml = path.join(d, 'config.toml');
+  fs.writeFileSync(toml, '[mcp_servers.theirs]\ncommand = "x"\n');
+  assert.throws(() => run('new-mcp.mjs', d, ['x', '-d', 'anything long enough to pass the check', '--config', 'config.toml']), /must be a JSON config/);
+  assert.match(fs.readFileSync(toml, 'utf8'), /mcp_servers\.theirs/, 'their TOML was rewritten');
+  assert.equal(fs.existsSync(path.join(d, 'tools', 'x-mcp')), false, 'scaffolded anyway');
+});
+
 test('the context-budget audit ships with the always-useful set', () => {
   // «Choose, do not hoard» is advice until something counts. skill-cleaner is
   // what counts, so it cannot be a niche extra: the loop only ever ADDS skills,
