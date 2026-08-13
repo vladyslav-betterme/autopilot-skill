@@ -20,11 +20,29 @@ authority. A server can be configured and dead — a bad path or a missing key
 fails at launch, silently, and reads exactly like «no such tool». Call it once
 with something harmless before you believe either answer.
 
+**And an empty answer is the one to distrust.** `tools.mjs` reads the files it
+knows; a harness whose config lives elsewhere reports as nothing at all. That
+happened here: it read VS Code's *project* config and no Claude Desktop config
+at all, on a machine whose
+`~/Library/Application Support/Claude/claude_desktop_config.json` held an
+`AfterEffectsMCP` server — while this very page used After Effects as the
+example of something you must build. Both files are read now; the point is that
+the next missing reader will look identical, so an absence is «not in these
+files», never «not on this machine».
+
 **1. Does the target already have a command line?** This is the rung that gets
 skipped, and it is the one that is usually right. After Effects has `aerender`
 and ExtendScript; macOS apps have `osascript`; every database, cloud and CI
 system ships a CLI. A shell command needs no server, no schema, no restart, and
 no config entry — and the loop can already run shell commands.
+
+**But «has a CLI» is not «is headless», and that gap is where unattended runs
+die.** `aerender` is an After Effects process: it wants a licensed, signed-in
+GUI seat, and it is not a daemon. `osascript` driving another application trips
+macOS Automation consent — a dialog nobody is there to click. Exercise the rung
+under the conditions the loop will actually meet (locked screen, no one signed
+in, a fresh user), and if it fails there, write that into `goal.md` instead of
+meeting it at 3 a.m.
 
 **2. Is there a public MCP server for it?** Search before writing. `find-skills`
 is for skills; for servers, search the registries and the vendor's own docs —
@@ -49,8 +67,10 @@ hand-rolled; that is right for four tools and wrong for forty.
 
 ## The restart trap, and why the scaffold is also a CLI
 
-**A harness reads its MCP config at STARTUP.** A server written mid-run is
-invisible to the session that wrote it. An unattended loop does not get a
+**Most harnesses read their MCP config at STARTUP.** A server written mid-run is
+then invisible to the session that wrote it. Some can reload — VS Code watches
+`mcp.json`, Gemini CLI has `/mcp refresh` — so this is a default, not a law:
+assume startup unless you have WATCHED your harness pick a server up live. An unattended loop does not get a
 restart, so «I built the server, continue after restart» is the loop dying
 politely — the same failure as §5b, wearing a deliverable.
 
@@ -84,7 +104,10 @@ or spend belongs behind the same explicit stop as the loop itself.
 - **Connectors.** They live in an account, not on disk.
 - **Whether a server starts.** Only launching it answers that.
 - **Which tools a server exposes.** Only the running session knows.
-- **A harness that keeps config somewhere else.** It reads Claude Code, Cursor,
-  VS Code, Gemini, opencode and Codex; anything else reports as absent, and
-  «absent» from a reader that does not know the file is not absence
-  (`premise-check.md`, «search traps that report a false absence»).
+- **A harness that keeps config somewhere else.** It reads Claude Code
+  (`.mcp.json`, `~/.claude.json` including the per-project block), Claude Desktop,
+  Codex, Cursor, Gemini, opencode, and VS Code (project AND user `mcp.json`).
+  Anything else reports as absent — and «absent» from a reader that does not know
+  the file is not absence (`premise-check.md`, «search traps that report a false
+  absence»). A file it cannot parse is listed as UNREADABLE for the same reason:
+  a trailing comma used to read as «no MCP here».

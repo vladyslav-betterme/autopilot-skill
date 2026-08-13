@@ -53,15 +53,51 @@ const serverRel = path.join(dirRel, 'server.mjs');
 const serverAbs = path.join(root, serverRel);
 const configAbs = path.join(root, configRel);
 
-/** The premise check, applied to tools: a SECOND server for a job one already
- *  does is the same defect as a second changelog, and costs more. */
-const config = (() => {
-  try { return JSON.parse(fs.readFileSync(configAbs, 'utf8')); } catch { return null; }
-})();
-const key = config?.servers ? 'servers' : 'mcpServers';
+/**
+ * The scaffold must land INSIDE the project, because the path it registers is
+ * relative to it. `--dir /opt/ae` wrote to `<root>/opt/ae` (that is what
+ * `path.join` does with an absolute second argument), registered
+ * `/opt/ae/server.mjs`, and printed three lines that were each false while
+ * exiting 0 — a server that can never start.
+ */
+for (const [label, rel] of [['--dir', dirRel], ['--config', configRel]]) {
+  const abs = path.resolve(root, rel);
+  if (!abs.startsWith(root + path.sep)) die(`${label} must stay inside the project — «${rel}» resolves to ${abs}`);
+}
+
+/**
+ * The premise check, applied to tools: a SECOND server for a job one already
+ * does is the same defect as a second changelog, and costs more.
+ *
+ * A config that EXISTS but does not parse is the dangerous case and is refused:
+ * the parse error used to be swallowed into `null`, and the file was then
+ * REPLACED by a one-server object — VS Code's `mcp.json` legally carries `//`
+ * comments and an `inputs` block, so «registered» could mean «your entire MCP
+ * config is gone», exit 0.
+ */
+const configExists = fs.existsSync(configAbs);
+let config = null;
+if (configExists) {
+  const raw = fs.readFileSync(configAbs, 'utf8');
+  try {
+    config = JSON.parse(raw);
+  } catch (err) {
+    die(`${configRel} exists but is not valid JSON (${err.message.split('\n')[0]}).\n` +
+      'Refusing to write: this file may carry comments or other settings, and rewriting it would delete them.\n' +
+      'Fix the file, or pass --config <another path>.');
+  }
+}
+/** The key belongs to the FILE, not to what happens to be in it. Choosing it
+ *  from existing content registered a fresh `.vscode/mcp.json` under
+ *  `mcpServers` — the one key VS Code does not read. */
+const key = /[/\\]?\.vscode[/\\]/.test(configRel) ? 'servers' : (config?.servers ? 'servers' : 'mcpServers');
 if (config?.[key]?.[name]) {
   die(`«${name}» is already registered in ${configRel} — extend that server instead of adding a second one.`);
 }
+/** Written before the server file exists, so a failure here does not leave a
+ *  scaffold that «already exists — not overwriting» on the retry. */
+const configDir = path.dirname(configAbs);
+if (!fs.existsSync(configDir)) die(`${path.relative(root, configDir)}/ does not exist — create it, or pass --config <another path>.`);
 
 const TEMPLATE = `#!/usr/bin/env node
 /**
@@ -118,18 +154,19 @@ async function call(toolName, args) {
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
+// process.exitCode, never process.exit. On a PIPE stdout is asynchronous and
+// exiting drops whatever has not drained: a 100 KB result came back cut to
+// exactly 65536 bytes, with status 0 and no marker. Every agent harness reads a
+// subprocess through a pipe, and this is the path the skill tells you to use.
 const argv = process.argv.slice(2);
-if (argv[0] === '--list') {
-  console.log(TOOLS.map((t) => \`\${t.name}  \${t.description}\`).join('\\n'));
-  process.exit(0);
-}
-if (argv[0] === '--call') {
+const cliMode = argv[0] === '--list' || argv[0] === '--call';
+if (cliMode) {
   try {
-    console.log(await call(argv[1], JSON.parse(argv[2] ?? '{}')));
-    process.exit(0);
+    if (argv[0] === '--list') console.log(TOOLS.map((t) => \`\${t.name}  \${t.description}\`).join('\\n'));
+    else console.log(await call(argv[1], JSON.parse(argv[2] ?? '{}')));
   } catch (err) {
     console.error(String(err.message ?? err));
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
@@ -174,8 +211,8 @@ async function handle(msg) {
 }
 
 let buffer = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
+if (!cliMode) process.stdin.setEncoding('utf8');
+if (!cliMode) process.stdin.on('data', (chunk) => {
   buffer += chunk;
   // Split on newlines and keep the tail: a message can arrive in pieces.
   const lines = buffer.split('\\n');
@@ -205,7 +242,9 @@ next[key][name] = { type: 'stdio', command: 'node', args: [serverRel] };
 fs.writeFileSync(configAbs, JSON.stringify(next, null, 2) + '\n');
 
 console.log(`created   : ${serverRel}`);
-console.log(`registered: ${configRel}  (server «${name}», relative path — it stays true on another machine)`);
+console.log(`registered: ${configRel}  (server «${name}», path relative to the project root)`);
+console.log(`            Whether a harness resolves that path against the project is ITS choice and`);
+console.log(`            is not verified here — if it fails to start, make the path absolute.`);
 console.log(`use now   : node ${serverRel} --call ping '{"text":"hello"}'`);
 console.log(`            An MCP config is read at STARTUP. This session cannot see the server;`);
 console.log(`            the --call form is the same code and works immediately — use it, do not wait.`);

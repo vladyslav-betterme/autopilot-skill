@@ -121,8 +121,14 @@ ignore costs the same context as no audit.
 ### Skills are half of it — the other half is reach
 
 `skills.mjs` says what the agent KNOWS. `tools.mjs` says what it can TOUCH: the
-MCP servers configured across every harness on this machine, the plugins that
-carry more, and — the part that matters — what nothing on disk can tell you.
+MCP servers it finds **in the config files it knows how to read** — Claude Code,
+Claude Desktop, Codex, Cursor, Gemini, opencode, VS Code — the plugins that carry
+more, and what nothing on disk can tell you. **An empty result means «not in
+these files», never «not on this machine»**, and a file it could not parse is
+reported as unknown rather than skipped. That distinction is not pedantry: an
+earlier version read one VS Code path and no Claude Desktop config at all, on a
+machine whose Claude Desktop config held an `AfterEffectsMCP` server — while this
+skill's worked example for writing one was «nothing drives After Effects».
 
 ```bash
 node <skill>/scripts/tools.mjs
@@ -139,11 +145,14 @@ and the loop is expected to climb it (`references/tooling.md`):
 | a connector? | account-level OAuth an unattended agent cannot complete → PARK it (§6): name the connector, the click, and what you did instead |
 | none of the above | write it: `node <skill>/scripts/new-mcp.mjs <name> -d "<what it drives>"` |
 
-**The one that will bite:** a harness reads its MCP config at STARTUP, so a
-server written mid-run is invisible to the session that wrote it. That is why
-the scaffold is *also* a CLI — `node server.mjs --call <tool> '<json>'`, the
-same handlers. Use that form now and let the next session get the server.
-«Continue after a restart» is a stalled loop holding a file.
+**The one that will bite:** most harnesses read their MCP config at STARTUP, so a
+server written mid-run is usually invisible to the session that wrote it. Some
+can reload (VS Code watches `mcp.json`; Gemini CLI has `/mcp refresh`) — assume
+startup **unless you have watched it reload**, because the cost of assuming
+wrongly is the whole run. That is why the scaffold is *also* a CLI —
+`node server.mjs --call <tool> '<json>'`, the same handlers. Use that form now
+and let the next session get the server. «Continue after a restart» is a stalled
+loop holding a file.
 
 Then, throughout: what you learn here becomes a skill of its own (§5), written
 by the loop and used the same session — and a capability it lacked becomes a
@@ -206,7 +215,31 @@ symptom the request names: find every other place with the same shape first, and
 fix it where they all pass through.
 
 **Prove.** Run the discovered check, **in the foreground, reading the exit code
-in the shell that ran it.** Run it ONCE BEFORE the first iteration too and paste
+in the shell that ran it** — or, better, let something that is not writing the
+summary read it for you:
+
+```bash
+node <skill>/scripts/prove.mjs --record -- npm run verify   # the check, its true status, into goal.md
+node <skill>/scripts/prove.mjs --times 3 -- <check>         # a check that disagrees with itself is flaky
+```
+
+Prove and Verify are the two steps a model can NARRATE — the others leave a
+file, a commit or a diff, while «the check passed» and «the reviewer agreed»
+were both text written by the context that wanted them to be true. The runner
+answers the first: it spawns **without a shell**, so the status it reports is
+the child's own; it **refuses a check whose own npm script contains a pipe**
+(`"verify": "tsc | tail"` reported the status of `tail`, which is the shape that
+shipped six red deploys reading as green); it reports `250` when the loop has
+been stopped, `251` when the same check returns two different statuses, and with
+`--record` writes the number **the run produced** — including a failing one —
+into `goal.md`.
+
+What it cannot see: a pipe inside a shell script, a Makefile target or a binary
+your check invokes. It removes the lie it can prove; it does not certify your
+check. §3 is what answers for Verify — record the verdict and its evidence in
+the ledger, or that step is narration too.
+
+Run it ONCE BEFORE the first iteration too and paste
 that into `goal.md`: a failure that predates you is a decision to record, not
 your iteration's fault, and without the baseline you will either adopt someone
 else's red or book their green as progress. A check that has ever disagreed with
@@ -259,6 +292,10 @@ writing them is what ruled out seeing them.
 - **No subagent available?** Then say so and stop at that criterion. A second
   pass by the same context is not verification, and calling it one is the whole
   failure this section exists for.
+- **Write the verdict down** — which reviewer, what scope, what it reproduced,
+  what it could not run. Verify is the other step that leaves no artifact of its
+  own, so «a critic confirmed it» is exactly as checkable as «the tests passed»
+  was before `prove.mjs`: not at all, unless somebody records it.
 
 All reviewers are read-only, every time, said explicitly: not even a command
 meant to prove a bypass. A skeptic once ran a production migration script to
@@ -351,13 +388,36 @@ and say which.
 **Be honest about what the wakeup is worth.** A self-scheduled wakeup lives
 inside the session: close the window and it is gone. That is a timer in a
 conversation, not autonomy. Real unattended running needs a carrier that
-outlives the session — a cloud schedule, or a daemon-backed agent runner whose
-stopping condition is the gate. When the work genuinely must survive the human
-leaving, say so and set one up instead of pretending the wakeup covers it.
+outlives the session, and the ladder applies here too: **if the harness already
+has a scheduler, use it** — a cloud schedule, a runner, an existing CI cron. Only
+when there is none:
+
+```bash
+node <skill>/scripts/carrier.mjs --agent "claude -p 'continue the loop; read docs/goal.md first'" --every 30m
+```
+
+It prints a launchd job, a crontab line or a GitHub Actions workflow — and
+**installs nothing**. Arming a job that runs an agent unattended spends money on
+a schedule, which is §6's to approve, so the install command is printed for a
+human to run. Every unit it emits `cd`s to the project first (cron and launchd
+start in `/`), holds an overlap lock (two loops sharing one `goal.md` is how a
+criterion gets marked met twice and landed once), and **halts on the same `STOP`
+file** — otherwise stopping the conversation leaves a daemon iterating without
+it. Read the log after the first fire, or you have armed something you have
+never watched run.
 
 **Draw the next item from the ledger, not from memory.** If the only thing that
 knows what comes next is this context window, the loop cannot survive a cold
 start — and a loop that cannot survive a cold start is a conversation.
+
+**And it must be stoppable without killing it.** A `STOP` file in the ledger
+home (or the project root) halts the run at the next Prove step: `prove.mjs`
+exits `97` **without running the check**, prints whatever the file says, and the
+iteration ends by writing state instead of landing half a change. Deleting the
+file resumes. The point is that stopping is a mechanism the human owns rather
+than a request the loop has to notice — the same reason the wakeup is scheduled
+rather than remembered, and the reason it is enforced at Prove: that is the one
+step every iteration passes through.
 
 ## 6. Stop and ask
 

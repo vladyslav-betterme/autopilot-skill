@@ -8,6 +8,7 @@
  * answers to one question, in the tool that teaches against it.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 /** 'file' | 'dir' | null, RESOLVING symlinks — the one question, asked one way.
@@ -34,6 +35,93 @@ export const MEMORY_HOMES = [
  *  home election and for the «does this already exist» scan — if they differ,
  *  the script elects one place and checks another. */
 export const LEDGER_ROOTS = ['.', 'docs', 'notes', '.github'];
+
+/**
+ * Where the ledger itself can LIVE — the election list AND the search list.
+ *
+ * These were two lists answering one question: `bootstrap.mjs` elected a home
+ * from `MEMORY_HOMES + docs + .` (so a repo with `docs/learnings/` got its
+ * ledger there), while the runner searched `LEDGER_ROOTS`, which does not
+ * include it. A critic reproduced the consequence: bootstrap announces a home,
+ * the owner writes `STOP` where it said, and the loop never sees it.
+ *
+ * Most specific first: election takes the first that exists, the search takes
+ * any. `LEDGER_ROOTS` above answers a DIFFERENT question — where to scan, one
+ * level deep, for a knowledge file this project already keeps under another
+ * name — and its depth-1 walk covers every entry here.
+ */
+export const LEDGER_HOMES = [
+  'docs/learnings', 'docs/decisions', 'docs/adr', 'docs/architecture', 'docs/notes',
+  'notes', 'docs', '.github', '.',
+];
+
+/** The file that halts an unattended run. One name, asked for in one place —
+ *  a stop the loop has to REMEMBER to honour is not a stop. */
+export const STOP_FILE = 'STOP';
+
+/**
+ * A directory entry by its EXACT name.
+ *
+ * `statKind` asks the filesystem, and macOS says `GOAL.md` is `goal.md`. A
+ * critic reproduced the consequence: a project carrying its own root `GOAL.md`
+ * had that file elected as this loop's ledger, so a `STOP` written where
+ * bootstrap said to write it was ignored and the run's results were appended to
+ * a file the project already owned.
+ */
+const hasExactly = (dir, name) => {
+  try { return fs.readdirSync(dir).includes(name); } catch { return false; }
+};
+const present = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+
+/**
+ * This directory and its parents, up to the project boundary.
+ *
+ * A loop that runs its check from a workspace subdirectory used to see no
+ * ledger and no STOP at all — `process.cwd()` was taken as the project and
+ * nothing walked up. Bounded by `.git`, by $HOME and by twelve levels, so it
+ * can never wander into a ledger that belongs to something else.
+ */
+function projectDirs(start) {
+  const dirs = [];
+  let dir = path.resolve(start);
+  for (let i = 0; i < 12; i++) {
+    dirs.push(dir);
+    if (hasExactly(dir, '.git')) break;
+    const up = path.dirname(dir);
+    if (up === dir || dir === os.homedir()) break;
+    dir = up;
+  }
+  return dirs;
+}
+
+/**
+ * Every directory that holds this loop's `goal.md`, nearest level first.
+ *
+ * Returns MORE THAN ONE when the answer is genuinely ambiguous — a project with
+ * its own `goal.md` beside the elected ledger home. Callers must refuse rather
+ * than pick: guessing is what wrote a loop's results into somebody's own file.
+ */
+export function findLedgerHomes(start) {
+  for (const dir of projectDirs(start)) {
+    const hits = LEDGER_HOMES.map((r) => path.join(dir, r)).filter((d) => hasExactly(d, 'goal.md'));
+    if (hits.length) return hits;
+  }
+  return [];
+}
+
+/** The STOP file, searched the same way — but ANY hit halts. A stop that is
+ *  missed is fatal and a stop that is over-eager costs one deletion, so this is
+ *  deliberately the more sensitive of the two searches. `lstat`, because a
+ *  broken symlink named STOP is a stop file that `existsSync` calls absent. */
+export function findStopFile(start) {
+  for (const dir of projectDirs(start)) {
+    for (const r of LEDGER_HOMES) {
+      const p = path.join(dir, r, STOP_FILE);
+      if (present(p)) return p;
+    }
+  }
+  return null;
+}
 
 /**
  * Every file under the ledger roots (and one level below them) whose NAME MEANS

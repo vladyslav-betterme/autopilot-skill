@@ -421,6 +421,255 @@ test('the skill name is not the description that preceded it', () => {
 });
 
 /**
+ * Prove — the one step of the loop a model could NARRATE.
+ *
+ * Everything else in an iteration leaves an artifact. «The check passed» was
+ * output pasted by the same context that wanted it to have passed, and all
+ * three lying forms survive being described honestly, because the description
+ * is the trusted part. These pin the runner that reports instead.
+ */
+const prove = (cwd, args) => execFileSync('node', [path.join(SCRIPTS, 'prove.mjs'), ...args], { cwd, encoding: 'utf8' });
+const proveStatus = (cwd, args) => {
+  try { prove(cwd, args); return 0; } catch (err) { return err.status; }
+};
+
+test('the piped form reports 0 for a failing check; the runner reports the truth', () => {
+  const d = tmp();
+  // The incident itself, executed: six red deploys read as green locally.
+  assert.equal(execFileSync('bash', ['-c', 'false | tail; echo $?'], { cwd: d, encoding: 'utf8' }).trim(), '0');
+  assert.equal(proveStatus(d, ['--', 'false']), 1, 'the runner adopted the pipe\'s answer');
+});
+
+test('a shell-shaped check is refused at the argument, not run and then explained', () => {
+  const d = tmp();
+  assert.throws(() => prove(d, ['--', 'true', '|', 'tail']), /refusing to run a shell-shaped check/);
+});
+
+test('a check that disagrees with itself is flaky, and cannot mark a criterion met', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'flip.sh'), '#!/bin/bash\nn=$(cat n 2>/dev/null || echo 0)\necho $((n+1)) > n\nexit $((n % 2))\n', { mode: 0o755 });
+  assert.equal(proveStatus(d, ['--times', '3', '--', './flip.sh']), 251);
+});
+
+test('STOP halts the loop BEFORE the check runs — not after', () => {
+  // A stop the agent has to remember to honour is discipline wearing the
+  // costume of a mechanism. Every iteration's Prove step passes through here.
+  const d = tmp();
+  // The home is ELECTED, never assumed — a bare directory has no docs/, so the
+  // ledger lands at the root. Reading it back is the same discipline the runner
+  // itself uses; hardcoding «docs» is how the first version of this test failed.
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  fs.writeFileSync(path.join(d, home, 'STOP'), 'owner asked for a halt\n');
+  assert.equal(proveStatus(d, ['--', 'touch', 'it-ran.txt']), 250);
+  assert.equal(fs.existsSync(path.join(d, 'it-ran.txt')), false, 'the command ran anyway');
+});
+
+test('--record writes the number the run produced, including a failing one', () => {
+  // A recorder that only records green is the narration it replaced.
+  const d = tmp();
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  proveStatus(d, ['--record', '--', 'false']);
+  assert.match(fs.readFileSync(path.join(d, home, 'goal.md'), 'utf8'), /\*\*prove\*\* `false` → 1/);
+});
+
+/**
+ * What the review council reproduced, and the fixes now pinned.
+ *
+ * Every test below stands for a finding that was demonstrated against a working
+ * script — most of them FATAL, and all of them invisible to reading.
+ */
+
+test('a pipe inside the npm script is refused — argv cannot see it', () => {
+  // `prove -- npm run verify` with "verify": "tsc | tail" recorded → 0 for a
+  // failing check and printed «the number came from the run». npm runs scripts
+  // through sh -c, so the pipe never appears in argv.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'package.json'), '{"name":"x","scripts":{"verify":"node -e \\"process.exit(1)\\" | tail -1"}}');
+  assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /the check itself is piped/);
+});
+
+test('a pipe inside sh -c is refused — the guard walked around in one argument', () => {
+  const d = tmp();
+  assert.throws(() => prove(d, ['--', 'sh', '-c', 'false | tail']), /shell-shaped check/);
+});
+
+test('STOP is found from a subdirectory — a monorepo check runs from one', () => {
+  const d = tmp();
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  fs.writeFileSync(path.join(d, home, 'STOP'), 'halt\n');
+  fs.mkdirSync(path.join(d, 'packages', 'api'), { recursive: true });
+  assert.equal(proveStatus(path.join(d, 'packages', 'api'), ['--', 'touch', 'ran.txt']), 250);
+  assert.equal(fs.existsSync(path.join(d, 'packages', 'api', 'ran.txt')), false);
+});
+
+test('two goal.md in scope: refuse to record rather than pick one', () => {
+  // Guessing appended a loop's results to a file the project already owned.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'docs'));
+  run('bootstrap.mjs', d);
+  fs.writeFileSync(path.join(d, 'goal.md'), '# the project\'s own\n');
+  assert.throws(() => prove(d, ['--record', '--', 'true']), /more than one goal\.md/);
+  assert.doesNotMatch(fs.readFileSync(path.join(d, 'goal.md'), 'utf8'), /\*\*prove\*\*/);
+});
+
+test('--times=3 is three runs, not a silently ignored flag', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'flip.sh'), '#!/bin/bash\nn=$(cat n 2>/dev/null || echo 0)\necho $((n+1)) > n\nexit $((n % 2))\n', { mode: 0o755 });
+  assert.equal(proveStatus(d, ['--times=3', '--', './flip.sh']), 251);
+});
+
+test('a mistyped flag ends the run — an ignored --record reads like nothing to record', () => {
+  assert.throws(() => prove(tmp(), ['--recrod', '--', 'true']), /unknown flag/);
+});
+
+test('a ledger that cannot be written does not swallow the flaky verdict', () => {
+  const d = tmp();
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  fs.writeFileSync(path.join(d, 'flip.sh'), '#!/bin/bash\nn=$(cat n 2>/dev/null || echo 0)\necho $((n+1)) > n\nexit $((n % 2))\n', { mode: 0o755 });
+  fs.chmodSync(path.join(d, home, 'goal.md'), 0o444);
+  assert.equal(proveStatus(d, ['--record', '--times', '3', '--', './flip.sh']), 251, 'the append threw past the flaky branch');
+});
+
+test('the ledger home bootstrap elects is the one the runner searches', () => {
+  // They kept two lists: a repo with docs/learnings/ was told its ledger lived
+  // there while the runner looked in four other places and found nothing — so a
+  // STOP written exactly where bootstrap said was ignored.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'docs', 'learnings'), { recursive: true });
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  assert.equal(home, 'docs/learnings');
+  fs.writeFileSync(path.join(d, home, 'STOP'), 'halt\n');
+  assert.equal(proveStatus(d, ['--', 'true']), 250, `STOP in the elected home «${home}» was not seen`);
+});
+
+test('a config that does not parse is never rewritten', () => {
+  // VS Code's mcp.json legally carries // comments; the parse error was
+  // swallowed and the whole file replaced by a one-server object, exit 0.
+  const d = tmp();
+  const jsonc = '{\n  // a comment, legal here\n  "servers": {"github": {"type":"http","url":"https://x"}},\n  "inputs": []\n}\n';
+  fs.mkdirSync(path.join(d, '.vscode'));
+  fs.writeFileSync(path.join(d, '.vscode', 'mcp.json'), jsonc);
+  assert.throws(() => run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects through aerender, a long enough description', '--config', '.vscode/mcp.json']), /not valid JSON/);
+  assert.equal(fs.readFileSync(path.join(d, '.vscode', 'mcp.json'), 'utf8'), jsonc, 'their config was rewritten');
+});
+
+test('a fresh .vscode/mcp.json is registered under the key VS Code reads', () => {
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.vscode'));
+  run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects through aerender, a long enough description', '--config', '.vscode/mcp.json']);
+  const cfg = JSON.parse(fs.readFileSync(path.join(d, '.vscode', 'mcp.json'), 'utf8'));
+  assert.ok(cfg.servers?.ae, `registered under ${Object.keys(cfg)} — VS Code reads «servers»`);
+});
+
+test('--dir outside the project is refused, not printed as if it worked', () => {
+  const d = tmp();
+  assert.throws(() => run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects through aerender, a long enough description', '--dir', '/opt/ae']), /must stay inside the project/);
+});
+
+test('the generated CLI does not truncate at the pipe buffer', () => {
+  // execFileSync captures through a pipe, which is exactly the failing case:
+  // process.exit dropped everything past 65536 bytes and still exited 0.
+  const d = tmp();
+  run('new-mcp.mjs', d, ['big', '-d', 'a server used to prove the CLI path does not lose output']);
+  const payload = 'x'.repeat(200000);
+  const out = execFileSync('node', ['tools/big-mcp/server.mjs', '--call', 'ping', JSON.stringify({ text: payload })],
+    { cwd: d, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  assert.ok(out.length > 200000, `truncated to ${out.length} bytes`);
+});
+
+test('a config it cannot read is reported as UNKNOWN, never as absent', () => {
+  // A trailing comma read as «no MCP here», and the ladder then says «write
+  // one» — a false absence produced by the tool built to prevent them.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, '.mcp.json'), '{"mcpServers": {"a": {"command":"x"},}}');
+  const out = toolsJson(d);
+  assert.equal(out.servers.length, 0);
+  assert.match(JSON.stringify(out.unreadable), /not valid JSON/);
+});
+
+test('a server map that is an array does not become servers named 0 and 1', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, '.mcp.json'), '{"servers":[{"name":"a"},{"name":"b"}]}');
+  const out = toolsJson(d);
+  assert.deepEqual(out.servers.map((s) => s.name), []);
+  assert.match(JSON.stringify(out.unreadable), /array/);
+});
+
+test('an unknown flag to tools.mjs is an error — «--cost» must not read as measured', () => {
+  assert.throws(() => execFileSync('node', [path.join(SCRIPTS, 'tools.mjs'), '--cost'],
+    { cwd: tmp(), encoding: 'utf8', env: { ...process.env, HOME: tmp() } }), /unknown flag/);
+});
+
+/**
+ * The carrier — what runs the loop when the window is closed.
+ *
+ * These execute the emitted wrapper rather than reading it. The first version
+ * joined its steps with `&&`, which reads correctly and is silently inert: with
+ * STOP absent the test returns 1, the chain short-circuits, and the carrier
+ * exits 0 having never invoked the agent. A daemon reporting success every
+ * thirty minutes and doing nothing is the worst shape this repo has produced.
+ */
+const carrierWrapper = (cwd, args) => {
+  const plist = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), ...args],
+    { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  return plist.match(/<string>(cd [\s\S]*?)<\/string>/)[1]
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+};
+
+test('the emitted wrapper actually invokes the agent', () => {
+  const d = tmp();
+  run('bootstrap.mjs', d);
+  const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.equal(fs.readFileSync(path.join(d, 'agent-logs', 'proof.txt'), 'utf8').trim(), 'ran');
+});
+
+test('STOP halts the carrier too — otherwise stopping the loop leaves a daemon iterating', () => {
+  const d = tmp();
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
+  fs.writeFileSync(path.join(d, home, 'STOP'), 'halt\n');
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'the agent ran with STOP present');
+  assert.equal(fs.existsSync(path.join(d, '.carrier.lock')), false, 'the lock leaked');
+});
+
+test('a run that overlaps the previous one does nothing — two loops share one ledger', () => {
+  const d = tmp();
+  run('bootstrap.mjs', d);
+  const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
+  fs.mkdirSync(path.join(d, '.carrier.lock'));
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'a second agent started on the same ledger');
+});
+
+test('the cron form is ONE command line — a crontab entry cannot wrap', () => {
+  const d = tmp();
+  const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'echo hi', '--kind', 'cron'],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const schedule = out.split('\n').filter((l) => /^[*\d]/.test(l));
+  assert.equal(schedule.length, 1, `a crontab entry split across lines:\n${out}`);
+});
+
+test('the plist is loadable, not merely well-shaped', { skip: process.platform !== 'darwin' }, () => {
+  const d = tmp();
+  const plist = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'echo hi'],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  fs.writeFileSync(path.join(d, 'job.plist'), plist);
+  execFileSync('plutil', ['-lint', path.join(d, 'job.plist')]); // throws on a malformed plist
+});
+
+test('the carrier arms nothing by itself', () => {
+  // A skill that quietly installs a background agent has made the decision that
+  // was not its to make: every run of it spends money on a schedule.
+  const d = tmp();
+  const before = fs.readdirSync(d);
+  execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'echo hi'],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  assert.deepEqual(fs.readdirSync(d), before, 'it wrote something into the project');
+});
+
+/**
  * Reach — the tools half. The loop stalls at capability in two ways that look
  * identical from inside: it decides a thing is impossible when it is already
  * configured, or it writes a second answer to a question something already

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MEMORY_HOMES, statKind, findExisting as scanFor } from './lib.mjs';
+import { LEDGER_HOMES, statKind, findExisting as scanFor } from './lib.mjs';
 
 const root = process.cwd();
 const has = (p) => fs.existsSync(path.join(root, p));
@@ -11,10 +11,11 @@ const has = (p) => fs.existsSync(path.join(root, p));
  * drifted, so a project keeping everything in `notes/` was told «memoryHomes:
  * [notes]» and then handed a second ledger at the repo root.
  */
-// `docs` and `.` are FALLBACK homes, not memory homes discovery would claim —
-// which is why they are added here and not to the shared list.
-const HOME_CANDIDATES = [...MEMORY_HOMES.filter((p) => !p.endsWith('.md')), 'docs', '.'];
-const home = HOME_CANDIDATES.find((p) => statKind(path.join(root, p)) === 'dir') ?? 'docs';
+// The election reads the SAME list the runner searches (`LEDGER_HOMES`). It
+// used to have its own, so a repo with `docs/learnings/` was told its ledger
+// lived there while `prove.mjs` looked in four other places and found nothing —
+// a STOP file written exactly where this script said to write it, ignored.
+const home = LEDGER_HOMES.find((p) => statKind(path.join(root, p)) === 'dir') ?? 'docs';
 
 /** Does a file whose name MEANS this already exist? Synonyms included, because
  *  the name is not the knowledge. One scanner, shared with discovery. */

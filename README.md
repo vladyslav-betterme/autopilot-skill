@@ -8,7 +8,7 @@ It is portable because it asks the work what «done» means instead of assuming,
 and it does not stop until that answer is satisfied.
 
 [![verify](https://github.com/vladyslav-betterme/autopilot-skill/actions/workflows/verify.yml/badge.svg)](https://github.com/vladyslav-betterme/autopilot-skill/actions/workflows/verify.yml)
-[![tests](https://img.shields.io/badge/tests-37-brightgreen.svg)](test/autopilot.test.mjs)
+[![tests](https://img.shields.io/badge/tests-node--test-brightgreen.svg)](test/autopilot.test.mjs)
 [![dependencies](https://img.shields.io/badge/dependencies-0-blue.svg)](package.json)
 [![node](https://img.shields.io/badge/node-%E2%89%A520.11-blue.svg)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
@@ -232,7 +232,9 @@ tool, continue after a restart» is a loop that stalled while producing a file.
 | [`scripts/new-skill.mjs`](skills/autopilot/scripts/new-skill.mjs) | Write a skill from a win and link it where the harness actually loads from. |
 | [`references/tooling.md`](skills/autopilot/references/tooling.md) | The capability ladder — already reachable, the app's own CLI, a public server, then write one. Plus what a tool result is (untrusted input) and what a server costs (context, every turn). |
 | [`scripts/tools.mjs`](skills/autopilot/scripts/tools.mjs) | MCP servers and plugins across six harnesses — and the honest list of what nothing on disk can tell you. |
-| [`scripts/new-mcp.mjs`](skills/autopilot/scripts/new-mcp.mjs) | Write the server that does not exist, register it, and call it **now** — an MCP config is only read at startup. |
+| [`scripts/new-mcp.mjs`](skills/autopilot/scripts/new-mcp.mjs) | Write the server that does not exist, register it, and call it **now** — an MCP config is usually only read at startup. |
+| [`scripts/prove.mjs`](skills/autopilot/scripts/prove.mjs) | Run the check and BE the thing that reports its status — no shell, a piped npm script refused, flaky detected, the number written into `goal.md` by the run rather than by the summary. |
+| [`scripts/carrier.mjs`](skills/autopilot/scripts/carrier.mjs) | Emit the launchd / cron / GitHub Actions unit that outlives the session — and install nothing. |
 | [`scripts/lib.mjs`](skills/autopilot/scripts/lib.mjs) | The questions two scripts both ask, asked in one place. |
 
 ## The parts worth stealing even if you never install it
@@ -261,7 +263,7 @@ tool, continue after a restart» is a loop that stalled while producing a file.
 ## Tests
 
 ```bash
-npm test          # 43 tests · no install step · no dependencies
+npm test          # no install step, no dependencies — the count is in the output, not in this line
 ```
 
 They are not decoration. Most of them pin defects a five-lens review council
