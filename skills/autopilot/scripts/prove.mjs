@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { findLedgerHomes, findStopFile, findUp, STOP_FILE } from './lib.mjs';
+import { findLedger, findStopFile, findUp, STOP_FILE } from './lib.mjs';
 
 const STOPPED = 250;
 const FLAKY = 251;
@@ -265,7 +265,7 @@ if (stopAt) {
 
 /** Where a `--record` would go — resolved BEFORE the run, so a misconfigured
  *  destination is not discovered after the check has already cost its minutes. */
-const homes = record ? findLedgerHomes(root) : [];
+const homes = record ? findLedger(root).homes : [];
 if (record && homes.length === 0) {
   die('--record: no goal.md in this project or its parents — run bootstrap.mjs first. Nothing was run.');
 }

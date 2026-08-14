@@ -1,4 +1,11 @@
-# Review — 2026-08-13
+# Review — campaign 01 (2026-08-13 → 08-14)
+
+> The file was called `2026-08-13.md` while carrying rounds done on the 14th —
+> a drill caught it. Rounds are dated in their own headings now.
+>
+> **The cause counts in this file group FATALS into a narrative.** The counter
+> §7 actually uses is the distribution table in `docs/failures.md`: one
+> taxonomy, one file. Where they differ, that one wins.
 
 The council's own record. It exists because a cold-start drill found that the
 ledger's most load-bearing number — «6 fatal, 11 major» — was pure assertion:
@@ -208,17 +215,21 @@ those areas come back clean.
 
 **Nine fatals.** Every one except `loop`'s was inside a previous round's fix.
 
-| # | Area | What | Fixed by |
-|---|---|---|---|
-| R4-F1 | prove | The quote stripper ran `'…'` before `"…"`, so an apostrophe inside a double-quoted string paired ACROSS whatever sat between and deleted it: `echo "don't panic" ; false ; echo "we're green"` was cleared, run, and recorded `→ 0` for a check that exited 1 | one character scanner that tracks quote state, replacing three `String.replace` stages |
-| R4-F2 | prove | The shell's script was «the first argument without a dash», so `bash -O extglob -c '… \| …'` was scanned as the string «extglob» | the argument after `-c`, found wherever the shell sits in argv |
-| R4-F3 | carrier | The GitHub emitter ignored the nine STOP paths and baked ONE relative path. With `STOP` at the project root the step reported `halted=false` and the agent ran every 30 minutes forever — under a banner printing all nine. Every carrier test hardcoded `--kind launchd`: the GitHub emitter had ZERO stop coverage | the same set, relative to the repo root, where an Actions step actually runs |
-| R4-F4 | carrier | A step in a cron minute field means «every value divisible by N». `--every 45m` fired at :00 and :45 — 48 paid runs a day where 32 were asked for | refuse what cron cannot express, name the divisors — and later, cut the emitter entirely |
-| R4-F5 | new-mcp | `configExists` was a snapshot taken BEFORE the lock and it gated the re-read, so a racer starting in an empty project wrote `{}` over what the first holder had just created: 7 races of 10 lost a registration, both printing «registered», both exit 0 | the lock is taken before anything is read or written |
-| R4-F6 | loop | **Ctrl-C and SIGTERM could not stop it.** `run()` was fully synchronous, so the handlers never got a turn — while REGISTERING them had already removed Node's default terminate action. Ctrl-C killed the child and the loop immediately started a fresh PAID agent; only SIGKILL worked, and SIGKILL left the lock, which silently disabled the carrier forever | the loop is asynchronous, the handlers run, and the lock carries its holder's PID so a dead one is reclaimed |
-| R4-F7 | loop | The lock was keyed to `cwd` while the ledger came from a walk UP: two loops started from different directories drove one `goal.md` concurrently, each writing its own log | one walk returns the ledger AND its project root; both the lock and the log key off it |
-| R4-F8 | prove | `--note` was written raw, so one run could FORGE a second ledger entry for a command that never ran — through the flag the skill tells the model to use | whitespace-collapsed |
-| R4-F9 | new-mcp | A top-level array config printed «registered» and exited 0 while `JSON.stringify` dropped the property; a top-level string threw and left a scaffold | the shape helper is asked about the config itself, not only about `config[key]` |
+Round 1's standard is «every finding carries the command that reproduces it».
+Round 4's table was written without one — the first round in this campaign to
+miss it — so the reproductions are restored here from the reviewers' reports.
+
+| # | Area | What | Reproduce it | Fixed by |
+|---|---|---|---|---|
+| R4-F1 | prove | The quote stripper ran `'…'` before `"…"`, so an apostrophe inside a double-quoted string paired ACROSS whatever sat between and deleted it: `echo "don't panic" ; false ; echo "we're green"` was cleared, run, and recorded `→ 0` for a check that exited 1 | `"verify": "echo \"don't panic\" ; node -e \"process.exit(1)\" ; echo \"we're green\""` then `prove --record -- npm run verify` | one character scanner that tracks quote state, replacing three `String.replace` stages |
+| R4-F2 | prove | The shell's script was «the first argument without a dash», so `bash -O extglob -c '… \| …'` was scanned as the string «extglob» | `prove -- bash -O extglob -c 'node -e "process.exit(1)" \| cat'` | the argument after `-c`, found wherever the shell sits in argv |
+| R4-F3 | carrier | The GitHub emitter ignored the nine STOP paths and baked ONE relative path. With `STOP` at the project root the step reported `halted=false` and the agent ran every 30 minutes forever — under a banner printing all nine. Every carrier test hardcoded `--kind launchd`: the GitHub emitter had ZERO stop coverage | ledger in `docs/`, `STOP` at the root, then run the emitted step's shell block: it printed `halted=false` | the same set, relative to the repo root, where an Actions step actually runs |
+| R4-F4 | carrier | A step in a cron minute field means «every value divisible by N». `--every 45m` fired at :00 and :45 — 48 paid runs a day where 32 were asked for | `carrier --kind cron --every 45m` → `*/45 * * * *`; expand it | refuse what cron cannot express, name the divisors — and later, cut the emitter entirely |
+| R4-F5 | new-mcp | `configExists` was a snapshot taken BEFORE the lock and it gated the re-read, so a racer starting in an empty project wrote `{}` over what the first holder had just created: 7 races of 10 lost a registration, both printing «registered», both exit 0 | two `new-mcp` processes in one empty project, `wait`, then count the keys in `.mcp.json` | the lock is taken before anything is read or written |
+| R4-F6 | loop | **Ctrl-C and SIGTERM could not stop it.** `run()` was fully synchronous, so the handlers never got a turn — while REGISTERING them had already removed Node's default terminate action. Ctrl-C killed the child and the loop immediately started a fresh PAID agent; only SIGKILL worked, and SIGKILL left the lock, which silently disabled the carrier forever | `loop --agent 'sleep 15' --max 6 --sleep 0 --thrash 99 &` then `kill -TERM` twice | the loop is asynchronous, the handlers run, and the lock carries its holder's PID so a dead one is reclaimed |
+| R4-F7 | loop | The lock was keyed to `cwd` while the ledger came from a walk UP: two loops started from different directories drove one `goal.md` concurrently, each writing its own log | one loop from the root, one from `src/deep`, both running at once | one walk returns the ledger AND its project root; both the lock and the log key off it |
+| R4-F8 | prove | `--note` was written raw, so one run could FORGE a second ledger entry for a command that never ran — through the flag the skill tells the model to use | `prove --record --note $'ok\n- **prove** `x` → 0' -- true` | whitespace-collapsed |
+| R4-F9 | new-mcp | A top-level array config printed «registered» and exited 0 while `JSON.stringify` dropped the property; a top-level string threw and left a scaffold | `printf '["legacy"]' > .mcp.json` then `new-mcp ae -d "…"` | the shape helper is asked about the config itself, not only about `config[key]` |
 
 Majors worth naming: `%` in a cron command becomes a newline and truncated it
 mid-quote, taking the log redirect with it; `run: ${agent}` as a plain YAML

@@ -6,9 +6,18 @@ about to do it again.
 
 Count **per area**. A falling total hides one area getting worse.
 
+> **This table is the ONE taxonomy.** §7's stopping rule counts «new causes per
+> round», and a cold-start drill found that number defined twice at different
+> granularity — 15 rows here against «9 distinct causes» in the review file —
+> with the rule naming neither. A rule whose unit is defined twice cannot be
+> passed, and «two answers to one question» is this repo's most-repeated cause.
+> So: **a new cause is a new ROW BELOW.** The review file's grouping is a
+> narrative over fatals only; it is not the counter. When they disagree, this
+> file wins, and the review file says so.
+
 ## The distribution
 
-Round 1 of review (2026-08-13, `docs/reviews/2026-08-13.md`) is the first data
+Round 1 of review (2026-08-13, `docs/reviews/campaign-01.md`) is the first data
 point. «Trend» needs two rounds to mean anything and says so rather than
 inventing a direction.
 

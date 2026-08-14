@@ -21,7 +21,7 @@
  * Prints to stdout. Writes nothing, installs nothing, needs no dependencies.
  */
 import path from 'node:path';
-import { findLedgerHomes, projectDirs, LEDGER_HOMES, LOCK_DIR, STOP_FILE } from './lib.mjs';
+import { findLedger, projectDirs, LEDGER_HOMES, LOCK_DIR, STOP_FILE } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -52,7 +52,7 @@ const label = `autopilot.${path.basename(root).replace(/[^a-zA-Z0-9.-]/g, '-')}`
 // The unit's STOP path is written once, into a file that will run for weeks —
 // so an ambiguous ledger is resolved by the human now, not by a guess baked
 // into a daemon.
-const ledgers = findLedgerHomes(root);
+const ledgers = findLedger(root).homes;
 if (ledgers.length > 1) {
   die(`more than one goal.md is in scope, and the emitted unit can only watch one:\n` +
     `${ledgers.map((l) => `  ${path.relative(root, l) || '.'}`).join('\n')}\n` +

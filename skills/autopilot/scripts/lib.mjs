@@ -120,21 +120,6 @@ export function projectDirs(start) {
   return dirs;
 }
 
-/**
- * Every directory that holds this loop's `goal.md`, nearest level first.
- *
- * Returns MORE THAN ONE when the answer is genuinely ambiguous — a project with
- * its own `goal.md` beside the elected ledger home. Callers must refuse rather
- * than pick: guessing is what wrote a loop's results into somebody's own file.
- */
-export function findLedgerHomes(start) {
-  for (const dir of projectDirs(start)) {
-    const hits = LEDGER_HOMES.map((r) => path.join(dir, r)).filter((d) => hasExactly(d, 'goal.md'));
-    if (hits.length) return hits;
-  }
-  return [];
-}
-
 /** The STOP file, searched the same way — but ANY hit halts. A stop that is
  *  missed is fatal and a stop that is over-eager costs one deletion, so this is
  *  deliberately the more sensitive of the two searches. `lstat`, because a
@@ -208,13 +193,20 @@ export function serverMapProblem(map) {
 }
 
 /**
- * The ledger home AND the project directory it was found in — from ONE walk.
+ * The ledger home(s) AND the project directory they were found in — ONE walk,
+ * ONE function, because this question has cost this repo five fatals.
  *
- * They were derived separately: `loop.mjs` locked in `process.cwd()` while the
- * ledger came from a walk UP, so two loops started from different directories
- * of one project each took their own lock and drove the same `goal.md`
- * concurrently. Whatever keys the lock must be the same thing that keys the
- * ledger, so they are returned together.
+ * It was two functions for a while: `findLedgerHomes` returned only the homes,
+ * `findLedger` returned the homes and the root, and three scripts used the
+ * first while one used the second. Nothing was broken YET — and «two answers
+ * to one question, not yet diverged» is precisely the state every one of those
+ * five fatals was in the day before it diverged. An oracle written to catch
+ * that shape could not even demonstrate itself against this file, because
+ * patching one function left the other one right. That was the tell.
+ *
+ * Returns MORE THAN ONE home when the answer is genuinely ambiguous — a project
+ * with its own `goal.md` beside the elected home. Callers must refuse rather
+ * than pick: guessing is what wrote a loop's results into somebody's own file.
  */
 export function findLedger(start) {
   for (const dir of projectDirs(start)) {
