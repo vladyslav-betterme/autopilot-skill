@@ -25,6 +25,7 @@ inventing a direction.
 | **A document stating as an invariant what was never checked** | 9 claims | first round — and one of them was written BY this campaign, an hour after the rule against it |
 | **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 — `path.resolve` checked, `path.join` wrote; `prove` walked up, the carrier did not |
 | **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 — the separator regex; replaced by a whitelist |
+| **The guard is beaten by the layer IN FRONT of it** | 3 | R2, R3, R4 — each round's fix was correct and the stage feeding it was forgeable |
 | **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
 
 ## Patterns
@@ -116,3 +117,23 @@ the emitted unit tested nine paths relative to cwd.
 **The tell:** the guard and the action are two expressions, not one value. Derive
 the value ONCE and let both use it — a check that recomputes what it is checking
 is checking something else.
+
+### The guard is beaten by the layer in front of it — three rounds running
+
+R2 hardened `hiddenPipe` to read the script; R3 showed the script it read was
+the wrong package.json. R3 replaced a separator blacklist with a whitelist; R4
+showed the whitelist was fed by a stripper that an apostrophe inside double
+quotes could forge. Every fix was correct **about the thing it fixed**.
+
+A reviewer put it exactly: *«each round's guard is defeated by the layer in
+front of it.»* The tell is that a guard has a PIPELINE — normalise, then decide.
+Whatever normalises is where the next defect lives, because it is the part
+nobody reviews: it looks like plumbing.
+
+**What worked, twice:** delete the pipeline. R3's `--dir` fix derived ONE
+absolute path and let the check and the write share it; R4's replaced three
+`String.replace` stages with a single scanner that tracks quote state. Both
+diffs were SHORTER than what they replaced.
+
+**What is still open** is whether analysis is the right shape at all — see
+`decisions.md`, «not built: making the check honest instead of judging it».
