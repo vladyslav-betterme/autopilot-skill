@@ -1,0 +1,7 @@
+# What the loop itself writes into whatever project it runs in. Both are
+# per-machine state, and `agent-logs/loop.jsonl` is the one file a stray
+# `git add .` in a real campaign would commit — which is how a run's private
+# transcript reaches a public repository.
+agent-logs/
+.autopilot.lock/
+node_modules/

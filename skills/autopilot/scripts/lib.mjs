@@ -225,9 +225,9 @@ export function findLedger(start) {
  * invokes the agent, which is the exact failure its own comment warns about.
  */
 export function takeLock(dir) {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      fs.mkdirSync(dir);
+      fs.mkdirSync(dir);           // atomic: exactly one winner
       fs.writeFileSync(path.join(dir, 'pid'), String(process.pid));
       return true;
     } catch {
@@ -240,10 +240,62 @@ export function takeLock(dir) {
         // EPERM means it EXISTS and belongs to someone else. Treating that as
         // «gone» stole a live holder's lock.
         if (err.code === 'EPERM') return false;
-        // Gone. Reclaim once, then try again; if someone beat us to it, they hold it.
-        try { fs.rmSync(dir, { recursive: true }); } catch { return false; }
+        /**
+         * Gone — reclaim ATOMICALLY.
+         *
+         * This was `rmSync` then `mkdirSync`: two syscalls, so a competitor's
+         * remove could land after the winner's create, and BOTH walked away
+         * believing they held it. Measured: 1 contended start in 60 with two
+         * racers, 23 of 25 with sixty-four, and end to end both paid agents
+         * ran. `rename` is one atomic step, so only one process can move the
+         * stale directory aside; the loser finds it gone and races for `mkdir`
+         * honestly, which is the primitive that was correct all along.
+         */
+        const aside = `${dir}.stale-${process.pid}-${attempt}`;
+        try { fs.renameSync(dir, aside); } catch { continue; }
+        try { fs.rmSync(aside, { recursive: true, force: true }); } catch { /* it is out of the way */ }
       }
     }
   }
   return false;
 }
+
+/**
+ * Release ONLY what we still hold.
+ *
+ * An unconditional delete stripped the lock from a process that had legitimately
+ * taken it after an operator cleared a stale one — `loop.mjs` prints that
+ * instruction itself — so a third process could then acquire it while the second
+ * was mid-iteration.
+ */
+export function releaseLock(dir) {
+  try {
+    if (Number(fs.readFileSync(path.join(dir, 'pid'), 'utf8').trim()) !== process.pid) return false;
+    fs.rmSync(dir, { recursive: true });
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Is this ledger file safe to APPEND to?
+ *
+ * `findLedger` accepts a directory because it contains an entry named
+ * `goal.md`, and `appendFileSync` follows a symlink. A repository shipping
+ * `docs/goal.md -> ../../../.zshrc` therefore had the loop's own records
+ * written outside the project — and because a record is
+ * «- **prove** `<command>` → 0», sourcing that file RAN the backticked command.
+ * `bootstrap.mjs` refuses through a link with `flag: 'wx'` and `findStopFile`
+ * uses `lstat`; this one path did neither.
+ */
+export function ledgerWritable(file, root) {
+  let st;
+  try { st = fs.lstatSync(file); } catch { return 'is not there'; }
+  if (st.isSymbolicLink()) {
+    const target = realPath(file);
+    const inside = target === realPath(root) || target.startsWith(realPath(root) + path.sep);
+    return inside ? null : `is a symlink pointing outside the project, at ${target}`;
+  }
+  if (!st.isFile()) return 'is not a regular file';
+  return null;
+}
+

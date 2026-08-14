@@ -22,7 +22,20 @@ import { MEMORY_HOMES } from './lib.mjs';
 const root = process.cwd();
 const read = (p) => { try { return fs.readFileSync(path.join(root, p), 'utf8'); } catch { return null; } };
 const has = (p) => fs.existsSync(path.join(root, p));
-const sh = (cmd, args) => { try { return execFileSync(cmd, args, { cwd: root, encoding: 'utf8', stdio: ['ignore','pipe','ignore'] }).trim(); } catch { return null; } };
+/**
+ * git, with the repository's own executable configuration disabled.
+ *
+ * `.git/config` is data the project ships, and `core.fsmonitor` is a COMMAND
+ * git runs — `git status` in a hostile checkout executed it, during discovery.
+ * `core.pager`, `core.sshCommand` and `core.hooksPath` are the same shape.
+ * These `-c` overrides win over the repo's config.
+ */
+const GIT_SAFE = ['-c', 'core.fsmonitor=', '-c', 'core.pager=cat', '-c', 'core.hooksPath=/dev/null',
+  '-c', 'core.sshCommand=/bin/false', '-c', 'core.askPass=', '-c', 'protocol.ext.allow=never'];
+const sh = (cmd, args) => {
+  const argv = cmd === 'git' ? [...GIT_SAFE, ...args] : args;
+  try { return execFileSync(cmd, argv, { cwd: root, encoding: 'utf8', stdio: ['ignore','pipe','ignore'] }).trim(); } catch { return null; }
+};
 const glob = (re) => { try { return fs.readdirSync(root).some((f) => re.test(f)); } catch { return false; } };
 
 /** Checks in the order a human would run them: cheapest signal first. */
@@ -130,18 +143,42 @@ function denoProject() {
  * «a made-up check is worse than an honest none», which this skill's own test
  * says in as many words. The generic branch below did it correctly.
  */
+/**
+ * DISCOVERY MUST NOT EXECUTE THE PROJECT. This runs before anyone has read it.
+ *
+ * Round 5 replaced a regex with `make -n <target>`, under the comment «-n runs
+ * nothing». That is false: make expands `$(shell …)` while PARSING, so a
+ * hostile Makefile ran a command during the FIRST thing SKILL.md tells the loop
+ * to do, against a project nobody has looked at yet. Reproduced.
+ *
+ * There is no safe way to ask make what it defines — `-p`, `-n` and `--dry-run`
+ * all parse, and parsing is execution. So this reads the text again, with the
+ * regex's limits STATED rather than pretended away, and marks the answer
+ * unverified. The first run of the check is the verification: if the target
+ * does not exist, `make` exits 2 and `prove.mjs` reports it loudly, which is
+ * the honest place for that to surface.
+ */
 function recipeTarget(file, wanted, runner) {
   if (!has(file)) return null;
-  // ASK the tool. A regex over the text both invented and missed: it emitted
-  // `make check` for a target inside a `define` block and inside a false
-  // `ifeq`, where make exits 2 — and it MISSED `check test:` (two targets, one
-  // rule) and a target that arrives through `include`, handing the loop
-  // `make build` as its definition of done instead. `-n` runs nothing.
-  if (!onPath(runner)) return null;
-  return wanted.find((t) => {
-    try { execFileSync(runner, ['-n', t], { cwd: root, stdio: 'ignore' }); return true; } catch { return false; }
-  }) ?? null;
+  // What text-reading CAN exclude: a `define … endef` block (its lines are a
+  // variable's value, and `make check` on one exits 2) and comments. What it
+  // cannot: a false `ifeq`, or a target arriving through `include`. That is the
+  // price of not executing the project, and `recipeUnverified` is where it is
+  // paid out loud rather than hidden.
+  const body = (read(file) ?? '')
+    .replace(/^[ \t]*define\b[\s\S]*?^[ \t]*endef[ \t]*$/gm, '')
+    .replace(/^[ \t]*#.*$/gm, '');
+  // A rule may name several targets before the colon; `check:=1` is a variable
+  // and `make check` on it exits 2, so an assignment does not count.
+  const found = wanted.find((t) => new RegExp(`^[^\\S\\n]*(?:[\\w./-]+[ \\t]+)*${t}(?:[ \\t]+[\\w./-]+)*[ \\t]*:(?!:*=)`, 'm').test(body));
+  if (!found) return null;
+  recipeUnverified.push(`${runner} ${found}`);
+  return found;
 }
+/** Recipe targets found by READING, never by running. A target inside a
+ *  `define` block, a false `ifeq`, or one arriving through `include` is
+ *  therefore a maybe — say so instead of implying it was checked. */
+const recipeUnverified = [];
 const makeCheck = () => { const t = recipeTarget('Makefile', WANTED, 'make'); return t ? `make ${t}` : null; };
 const justCheck = () => { const t = recipeTarget('justfile', WANTED, 'just') ?? recipeTarget('Justfile', WANTED, 'just'); return t ? `just ${t}` : null; };
 
@@ -242,4 +279,4 @@ const signals = {
   dirty: (sh('git', ['status', '--porcelain']) ?? '').length > 0,
 };
 
-console.log(JSON.stringify({ root, project, memoryHomes, signals, unreadable, missingTools }, null, 2));
+console.log(JSON.stringify({ root, project, memoryHomes, signals, unreadable, missingTools, recipeUnverified }, null, 2));

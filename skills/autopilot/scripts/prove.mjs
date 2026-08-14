@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { findLedger, findStopFile, findUp, STOP_FILE } from './lib.mjs';
+import { findLedger, findStopFile, findUp, ledgerWritable, STOP_FILE } from './lib.mjs';
 
 const STOPPED = 250;
 const FLAKY = 251;
@@ -160,8 +160,13 @@ function compoundProblem(script) {
         // `|| exit` is the honest guard idiom — but `|| exit 0` swallows the
         // failure exactly like `|| true`, one token longer, and the guard
         // admitted it BY NAME while its own message said it could not hide one.
+        // The shell DEQUOTES: `exit "0"`, `exit '0'` and `exit 0""` are all
+        // `exit 0`, and the previous test was a text match on the raw word.
         const tail = s.slice(i + 2);
-        if (/^\s*exit\b/.test(tail) && !/^\s*exit\s+0*\s*($|[;&|])/.test(tail)) { i++; continue; }
+        const dequoted = tail.replace(/^\s*exit\s+/, '').replace(/['"]/g, '').trim();
+        const isExit = /^\s*exit\b/.test(tail);
+        const zero = /^0*($|[;&|\s])/.test(dequoted) || dequoted === '';
+        if (isExit && !zero) { i++; continue; }
         return '«||» followed by something that can succeed';
       }
       return '«|»';
@@ -292,6 +297,23 @@ function hiddenPipe(tokens, depth) {
   }
   return null;
 }
+/**
+ * The repository can swap the interpreter of the script this guard just read.
+ *
+ * `.npmrc` carries `script-shell=…`, so a `"verify": "tsc --noEmit"` that the
+ * guard clears can be handed to a shell script the repo ships — arbitrary code,
+ * AND a green record for a check that never ran. This is not the documented
+ * blind spot («a binary the check invokes»); it is the interpreter of the
+ * script the guard DID read.
+ */
+const npmrc = (() => { try { return fs.readFileSync(path.join(root, '.npmrc'), 'utf8'); } catch { return ''; } })();
+const shellOverride = /^\s*script-shell\s*=\s*(.+)$/m.exec(npmrc);
+if (shellOverride && RUNNERS.has(path.basename(cmd[0] ?? ''))) {
+  die(`this project's .npmrc sets script-shell=${shellOverride[1].trim()}\n` +
+    'The script this runner would read is not the thing that runs it, so nothing here can\n' +
+    'vouch for the status. Remove that line, or run the check without npm.');
+}
+
 const piped = hiddenPipe(cmd, 0);
 if (piped) {
   die(`the check itself is compound — ${piped.problem} decides its status, not the command it names.\n` +
@@ -322,6 +344,14 @@ if (stopAt) {
 const homes = record ? findLedger(root).homes : [];
 if (record && homes.length === 0) {
   die('--record: no goal.md in this project or its parents — run bootstrap.mjs first. Nothing was run.');
+}
+if (record && homes.length === 1) {
+  const why = ledgerWritable(path.join(homes[0], 'goal.md'), root);
+  if (why) {
+    die(`${path.join(path.relative(root, homes[0]) || '.', 'goal.md')} ${why}.\n` +
+      'Refusing to append: the loop\'s own records would land somewhere it does not own, and a\n' +
+      'record contains a backticked command. Nothing was run.');
+  }
 }
 if (record && homes.length > 1) {
   die(`--record: more than one goal.md is in scope, and guessing is how a loop's results get\n` +

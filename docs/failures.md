@@ -245,3 +245,50 @@ covered by something that RUNS it, it is prose, and prose rots.
 what it printed: no placeholder outside a usage line, every offered flag
 accepted by that script's own parser, every `node …` path present, every «read
 X» present.
+
+### A guard written for one process, in a program a scheduler runs twice (R7)
+
+The lock's own comment names the cost — «two agents on one ledger, which is how
+a criterion gets marked met twice and landed once» — and the lock did not
+deliver it. Reclaiming a stale one was `rmSync` then `mkdirSync`: two syscalls,
+so a competitor's remove landed after the winner's create and **both** returned
+true. Measured: 1 contended start in 60 with two racers, 23 of 25 with
+sixty-four, and end to end both paid agents ran, 1 in 150. `mkdir` was the
+atomic primitive all along; the reclaim stepped outside it. It is now one
+`rename`, which only one process can win.
+
+**The shape, not the syscall:** six rounds reviewed this code as if one process
+ran it, while the whole purpose of the carrier is that a scheduler fires it on
+an interval that has no idea a loop is already running. Every guard here has a
+second reader — and the second reader is not a person, it is another copy of the
+same program.
+
+Three more of the same family in one round: `release()` deleted the lock without
+checking it still owned it; the SIGKILL escalation closed over the mutable
+`child` and killed the NEXT iteration's agent, after which the loop stopped the
+campaign blaming the operator's command; and the day-of-month cron step wrapped
+at the end of every month, so «every 28 days» fired 23 times a year instead of
+13.
+
+### The tested copy of a rule and the copy that RUNS are different files (R7)
+
+«EPERM counts as alive» was true of `lib.mjs`, tested, and false of the shell
+one-liner the carrier emits — the copy that actually runs unattended every
+interval for weeks. `kill -0 "$(cat pid)"` returns non-zero for an EMPTY
+argument and for EPERM alike, so the wrapper reclaimed in three states the
+library refuses, including a live process owned by another user.
+
+This is the same cause as «a grammar emitted for an interpreter the check cannot
+run», one turn further on: here the check COULD run it and nobody had. The guard
+that closes it is a differential — `takeLock` and the emitted wrapper are given
+the same four lock states and must agree, and disagreement prints which one
+stole it.
+
+### A number that cannot be honoured, accepted as if it were (R7)
+
+`--timeout 40000` overflowed `setTimeout` past 2^31-1 ms and fired after ONE
+millisecond: asking for a very long timeout produced no timeout at all, every
+agent killed instantly, while the loop printed «40000 min» and the ledger
+recorded a 40000-minute timeout for a 0-second run. Refusing a value is the only
+honest answer when the runtime cannot represent it — the same rule this repo
+already applies to a cron period it cannot express.

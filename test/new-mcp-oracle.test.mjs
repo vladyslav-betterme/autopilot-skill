@@ -140,3 +140,62 @@ test('every line it prints is true, or it printed nothing and changed nothing', 
   }
   assert.deepEqual(broken, [], `new-mcp printed something untrue:\n  ${broken.join('\n  ')}`);
 });
+
+/**
+ * PROTOCOL CONFORMANCE for the server the scaffold writes.
+ *
+ * The skill's rung 4 is «when nothing drives the thing you need, write one» —
+ * so what it writes has to be a correct MCP server, not one that passes a
+ * handshake. A conformance pass driven by the official SDK client found three
+ * fatals: the schema was advertised and never enforced (`arguments:{}` against
+ * `required:["text"]` came back «alive: undefined» as a SUCCESS), `initialize`
+ * echoed any string as the negotiated version including one newer than the
+ * server itself, and a JSON-RPC batch was swallowed so the client hung forever.
+ */
+const speak = (dir, lines) => spawnSync('node', ['tools/probe-mcp/server.mjs'],
+  { cwd: dir, encoding: 'utf8', input: lines.map((l) => JSON.stringify(l)).join('\n') + '\n' });
+
+test('the generated server keeps the promise its schema makes', () => {
+  const d = tmp();
+  runNewMcp(d, ['probe', '-d', DESC]);
+  const rpc = (msg) => JSON.parse(speak(d, [msg]).stdout.trim().split('\n')[0]);
+
+  // The schema says `text` is a required string. Both violations are PROTOCOL
+  // errors per the spec, not tool results.
+  assert.equal(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ping', arguments: {} } }).error.code, -32602);
+  assert.equal(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ping', arguments: { text: 123 } } }).error.code, -32602);
+  // An unknown tool is a protocol error too — isError is for a tool that RAN.
+  assert.equal(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'nope' } }).error.code, -32602);
+  // …and the happy path still answers.
+  assert.match(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ping', arguments: { text: 'hi' } } }).result.content[0].text, /alive: hi/);
+});
+
+test('it never claims a protocol version it was not written for', () => {
+  const d = tmp();
+  runNewMcp(d, ['probe', '-d', DESC]);
+  const ver = (asked) => JSON.parse(speak(d, [{ jsonrpc: '2.0', id: 0, method: 'initialize', params: asked === undefined ? {} : { protocolVersion: asked } }]).stdout.trim()).result.protocolVersion;
+  assert.equal(ver('2025-06-18'), '2025-06-18', 'it should agree to a version it supports');
+  for (const asked of ['2025-11-25', 'banana', 1999, undefined]) {
+    assert.equal(ver(asked), '2025-06-18', `it echoed «${asked}» back as negotiated`);
+  }
+});
+
+test('nothing a client can send leaves it silent or dead', () => {
+  const d = tmp();
+  runNewMcp(d, ['probe', '-d', DESC]);
+  // A batch, a parse error and a null line: each used to be dropped without a
+  // reply — and the null one killed the process after answering the messages
+  // before it, so the client saw good replies and then a dead transport.
+  const batch = spawnSync('node', ['tools/probe-mcp/server.mjs'], { cwd: d, encoding: 'utf8', input: '[{"jsonrpc":"2.0","id":1,"method":"tools/list"}]\n' });
+  assert.equal(JSON.parse(batch.stdout.trim()).error.code, -32600);
+  const bad = spawnSync('node', ['tools/probe-mcp/server.mjs'], { cwd: d, encoding: 'utf8', input: '{"jsonrpc":"2.0","id":42,"method":"tools/list",}\n' });
+  assert.equal(JSON.parse(bad.stdout.trim()).error.code, -32700);
+  const withNull = spawnSync('node', ['tools/probe-mcp/server.mjs'], { cwd: d, encoding: 'utf8',
+    input: '{"jsonrpc":"2.0","id":1,"method":"ping"}\nnull\n{"jsonrpc":"2.0","id":2,"method":"ping"}\n' });
+  assert.equal(withNull.status, 0, 'a null line killed the session');
+  const ids = withNull.stdout.trim().split('\n').map((l) => JSON.parse(l).id);
+  assert.deepEqual(ids, [1, null, 2], 'the messages after the bad line were lost');
+  // A notification still gets nothing at all.
+  const note = spawnSync('node', ['tools/probe-mcp/server.mjs'], { cwd: d, encoding: 'utf8', input: '{"jsonrpc":"2.0","method":"notifications/initialized"}\n' });
+  assert.equal(note.stdout.trim(), '');
+});

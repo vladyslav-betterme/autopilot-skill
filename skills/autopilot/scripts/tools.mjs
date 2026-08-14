@@ -54,6 +54,11 @@ const readJson = (abs) => {
     return null;
   }
 };
+/** A name out of somebody's config file is DATA. Printed raw, a key containing
+ *  newlines forged two extra rows attributed to `.mcp.json` — a false PRESENCE,
+ *  which this file's own docstring calls worse than the absence it exists to
+ *  stop. Control characters and ANSI go the same way. */
+const clean = (v) => String(v).replace(/[\u0000-\u001f\u007f]/g, '·').slice(0, 60);
 const short = (abs) => (home && abs.startsWith(home) ? abs.replace(home, '~') : path.relative(root, abs) || '.');
 
 /** Per-OS application support directory, for the desktop apps that keep their
@@ -187,7 +192,7 @@ if (json) {
 const w = Math.min(Math.max(...servers.map((s) => s.name.length), 4), 28);
 console.log(`\x1b[1mMCP servers configured\x1b[0m (${servers.length})`);
 for (const s of servers) {
-  console.log(`  ${s.name.padEnd(w)}  ${s.transport.padEnd(5)}  ${s.how}  \x1b[2m[${s.sources.join(', ')}]\x1b[0m`);
+  console.log(`  ${clean(s.name).padEnd(w)}  ${clean(s.transport).padEnd(5)}  ${clean(s.how)}  \x1b[2m[${s.sources.map(clean).join(', ')}]\x1b[0m`);
   for (const d of s.differs ?? []) {
     console.log(`  ${' '.repeat(w)}  \x1b[33m↳ DIFFERS\x1b[0m ${d.transport} ${d.how}  \x1b[2m[${d.source}]\x1b[0m`);
   }
@@ -196,7 +201,7 @@ if (!servers.length) console.log('  none in any config file this script reads.')
 
 if (plugins.length) {
   console.log(`\n\x1b[1mPlugins\x1b[0m (${plugins.length}) — these can carry skills AND servers`);
-  for (const p of plugins) console.log(`  ${p.name}  \x1b[2m${p.version} · ${p.scope}\x1b[0m`);
+  for (const p of plugins) console.log(`  ${clean(p.name)}  \x1b[2m${clean(p.version)} · ${clean(p.scope)}\x1b[0m`);
 }
 if (approval && (approval.enabled.length || approval.disabled.length)) {
   console.log(`\nApproval for .mcp.json: enabled=${JSON.stringify(approval.enabled)} disabled=${JSON.stringify(approval.disabled)}`);

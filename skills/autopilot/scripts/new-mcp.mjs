@@ -190,7 +190,7 @@ if (!fs.existsSync(configDir)) die(`${path.relative(root, configDir)}/ does not 
 
 const TEMPLATE = `#!/usr/bin/env node
 /**
- * ${name} — ${description}
+ * ${name} — ${description.replace(/\*\//g, '* /')}
  *
  * TWO WAYS TO CALL IT, one implementation:
  *
@@ -236,10 +236,42 @@ const TOOLS = [
   // },
 ];
 
-async function call(toolName, args) {
+/**
+ * The schema is a PROMISE, and a hand-rolled server that does not keep it hands
+ * the model a successful-looking result built on 'undefined'. A conformance
+ * pass with the official SDK client found exactly that: 'arguments:{}' against
+ * 'required:["text"]' came back «alive: undefined», no error, no isError. The
+ * spec is explicit — servers MUST validate tool inputs, and bad arguments are a
+ * PROTOCOL error (-32602), not a tool result.
+ */
+class RpcError extends Error {
+  constructor(code, message, data) { super(message); this.code = code; this.data = data; }
+}
+function validate(schema, args) {
+  if (!schema || schema.type !== 'object') return;
+  const bad = [];
+  for (const key of schema.required ?? []) {
+    if (args[key] === undefined) bad.push(\`missing required «\${key}»\`);
+  }
+  for (const [key, spec] of Object.entries(schema.properties ?? {})) {
+    if (args[key] === undefined || !spec?.type) continue;
+    const actual = Array.isArray(args[key]) ? 'array' : typeof args[key];
+    const want = spec.type === 'integer' ? 'number' : spec.type;
+    if (actual !== want) bad.push(\`«\${key}» is \${actual}, expected \${spec.type}\`);
+  }
+  if (bad.length) throw new RpcError(-32602, \`invalid arguments: \${bad.join('; ')}\`);
+}
+
+async function call(toolName, rawArgs) {
   const tool = TOOLS.find((t) => t.name === toolName);
-  if (!tool) throw new Error(\`unknown tool «\${toolName}» — have: \${TOOLS.map((t) => t.name).join(', ')}\`);
-  return String(await tool.handler(args ?? {}));
+  // Unknown tool is a PROTOCOL error per the spec, not an isError result — the
+  // isError rule is for a tool that RAN and failed.
+  if (!tool) throw new RpcError(-32602, \`unknown tool «\${toolName}» — have: \${TOOLS.map((t) => t.name).join(', ')}\`);
+  const args = rawArgs === undefined || rawArgs === null ? {} : rawArgs;
+  if (typeof args !== 'object' || Array.isArray(args)) throw new RpcError(-32602, 'arguments must be an object');
+  validate(tool.inputSchema, args);
+  const out = await tool.handler(args);
+  return typeof out === 'string' ? out : JSON.stringify(out, null, 2);
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
@@ -260,6 +292,9 @@ if (cliMode) {
 }
 
 // ── MCP over stdio ──────────────────────────────────────────────────────────
+// **stdout is the protocol channel.** One 'console.log' for debugging emits a
+// line that is not a JSON-RPC message, and the spec forbids it — a client may
+// close the transport. Use 'console.error' for anything you want to see.
 // JSON-RPC 2.0, one message per line. A message with no \`id\` is a NOTIFICATION
 // and must get no reply at all — answering \`notifications/initialized\` is the
 // classic way a hand-written server hangs a client at startup.
@@ -267,18 +302,35 @@ if (cliMode) {
 // 'error' event kills the process with a stack nobody is left to read.
 process.stdout.on('error', (err) => { if (err.code === 'EPIPE') process.exit(0); throw err; });
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n');
-const PROTOCOL = '2025-06-18';
+
+/** The versions this server was actually written for. It used to ECHO whatever
+ *  a client asked for — including a version newer than itself, on the first
+ *  handshake with a current SDK — which is a claim it cannot keep. The spec
+ *  says: answer with the requested version if you support it, otherwise with
+ *  one you do support. */
+const SUPPORTED = ['2025-06-18'];
+const PROTOCOL = SUPPORTED[0];
 
 async function handle(msg) {
+  // A batch, a null, an array, a number: none of these is a request, and
+  // destructuring them threw OUTSIDE the try — one 'null' line killed the whole
+  // session after answering the messages before it.
+  if (Array.isArray(msg)) {
+    return send({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'this server does not accept JSON-RPC batches' } });
+  }
+  if (msg === null || typeof msg !== 'object') {
+    return send({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'not a JSON-RPC message' } });
+  }
   const { id, method, params } = msg;
-  if (id === undefined) return; // notification
+  if (id === undefined) return;                        // a notification: never answer
   const ok = (result) => send({ jsonrpc: '2.0', id, result });
+  const fail = (code, message, data) => send({ jsonrpc: '2.0', id, error: data === undefined ? { code, message } : { code, message, data } });
+  if (typeof method !== 'string') return fail(-32600, 'missing or non-string «method»');
   try {
     if (method === 'initialize') {
+      const asked = params?.protocolVersion;
       return ok({
-        // Echo the client's version when it sent one: it is the version both
-        // sides already agree on, and guessing higher gets the session dropped.
-        protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL,
+        protocolVersion: typeof asked === 'string' && SUPPORTED.includes(asked) ? asked : PROTOCOL,
         capabilities: { tools: {} },
         serverInfo: { name: '${name}', version: '0.1.0' },
       });
@@ -288,17 +340,18 @@ async function handle(msg) {
       return ok({ tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
     }
     if (method === 'tools/call') {
-      // A tool that THREW is a result the model must see and can react to —
-      // not a protocol error, which it never sees.
       try {
         return ok({ content: [{ type: 'text', text: await call(params?.name, params?.arguments) }] });
       } catch (err) {
+        // A tool that RAN and failed is a result the model must see. A protocol
+        // error — unknown tool, bad arguments — is an error object.
+        if (err instanceof RpcError) return fail(err.code, err.message, err.data);
         return ok({ content: [{ type: 'text', text: String(err.message ?? err) }], isError: true });
       }
     }
-    send({ jsonrpc: '2.0', id, error: { code: -32601, message: \`unknown method \${method}\` } });
+    fail(-32601, \`unknown method \${method}\`);
   } catch (err) {
-    send({ jsonrpc: '2.0', id, error: { code: -32603, message: String(err.message ?? err) } });
+    fail(-32603, String(err.message ?? err));
   }
 }
 
@@ -312,8 +365,18 @@ if (!cliMode) process.stdin.on('data', (chunk) => {
   for (const line of lines) {
     if (!line.trim()) continue;
     let msg;
-    try { msg = JSON.parse(line); } catch { continue; }
-    handle(msg);
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      // -32700, not silence. A malformed line used to be dropped, and the
+      // client waited until its own timeout with no diagnostic.
+      send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } });
+      continue;
+    }
+    // '.catch', because an unhandled rejection here takes the whole session down.
+    Promise.resolve(handle(msg)).catch((err) => {
+      send({ jsonrpc: '2.0', id: null, error: { code: -32603, message: String(err?.message ?? err) } });
+    });
   }
 });
 `;

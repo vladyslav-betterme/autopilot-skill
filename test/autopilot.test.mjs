@@ -939,6 +939,83 @@ test('a TOP-LEVEL array or string config is refused too', () => {
   }
 });
 
+test('discovery never executes the project it is discovering', () => {
+  // `make -n <target>` was introduced with the comment «-n runs nothing». make
+  // expands $(shell …) while PARSING, so a hostile Makefile ran a command
+  // during the FIRST thing SKILL.md tells the loop to do, against a project
+  // nobody has read yet. There is no safe way to ask make what it defines.
+  const d = tmp();
+  const marker = path.join(d, 'executed.txt');
+  fs.writeFileSync(path.join(d, 'Makefile'), `PWNED := $(shell touch ${marker})\ncheck:\n\t@true\n`);
+  const out = JSON.parse(run('discover.mjs', d));
+  assert.equal(fs.existsSync(marker), false, 'discovery executed the Makefile');
+  // …and it says the target was read, not verified.
+  assert.deepEqual(out.recipeUnverified, ['make check']);
+});
+
+test('a quoted zero does not walk past the compound guard', () => {
+  // `|| exit 0` was special-cased by a text match on a word the shell dequotes:
+  // `exit "0"`, `exit '0'` and `exit 0""` all went through as honest.
+  const d = tmp();
+  for (const tail of ['exit 0', 'exit "0"', "exit '0'", 'exit 0""']) {
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ scripts: { verify: `node -e "process.exit(1)" || ${tail}` } }));
+    assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /compound/, tail);
+  }
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ scripts: { verify: 'node -e "process.exit(1)" || exit 1' } }));
+  assert.equal(proveStatus(d, ['--', 'npm', 'run', 'verify']), 1, 'an honest guard idiom must still run');
+});
+
+test('a repo-local .npmrc cannot swap the shell the guard vouched for', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'package.json'), '{"scripts":{"verify":"true"}}');
+  fs.writeFileSync(path.join(d, '.npmrc'), 'script-shell=/tmp/evil\n');
+  assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /script-shell/);
+});
+
+test('the ledger is never appended to through a symlink out of the project', () => {
+  // A record is «- **prove** `<command>` → 0», so a goal.md linked at a shell
+  // rc file wrote a backticked command into it — code execution at the next
+  // shell start, from a repository the loop was merely pointed at.
+  const d = tmp();
+  const outside = path.join(tmp(), 'theirs');
+  fs.writeFileSync(outside, '# not ours\n');
+  fs.mkdirSync(path.join(d, 'docs'));
+  fs.symlinkSync(outside, path.join(d, 'docs', 'goal.md'));
+  assert.throws(() => prove(d, ['--record', '--', 'true']), /symlink pointing outside/);
+  assert.equal(fs.readFileSync(outside, 'utf8'), '# not ours\n');
+});
+
+test('a project path is quoted for the shell, and escaped for XML', () => {
+  // JSON.stringify escapes " and \ and leaves $, backtick and ( alone, so a
+  // directory named proj$(…) put a command substitution into a unit a scheduler
+  // runs as the user, every interval. And StandardOutPath was not XML-escaped
+  // while the wrapper beside it was.
+  const base = tmp();
+  const d = path.join(base, 'proj$(touch pwned)');
+  fs.mkdirSync(path.join(d, 'docs'), { recursive: true });
+  run('bootstrap.mjs', d);
+  const wrapper = carrierWrapper(d, ['--agent', 'echo hi']);
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.equal(fs.existsSync(path.join(d, 'pwned')), false, 'the substitution ran');
+
+  const x = path.join(base, 'a&b<c');
+  fs.mkdirSync(path.join(x, 'docs'), { recursive: true });
+  run('bootstrap.mjs', x);
+  const plist = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'echo hi', '--kind', 'launchd'],
+    { cwd: x, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  fs.writeFileSync(path.join(x, 'j.plist'), plist);
+  if (process.platform === 'darwin') execFileSync('plutil', ['-lint', path.join(x, 'j.plist')]);
+});
+
+test('a skill is never written outside the project through a symlinked home', () => {
+  const d = tmp();
+  const outside = tmp();
+  fs.mkdirSync(path.join(d, '.claude'));
+  fs.symlinkSync(outside, path.join(d, '.claude', 'skills'));
+  assert.throws(() => run('new-skill.mjs', d, ['pwned', '-d', DESC]), /outside this project/);
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+
 test('a hardlinked config is refused — realpath cannot see a second name', () => {
   const d = tmp();
   const outside = path.join(tmp(), 'important.json');
@@ -1106,7 +1183,9 @@ test('the carrier locks the PROJECT, not the directory it was emitted from', () 
   // realpath, because /var is a symlink to /private/var on macOS — the same
   // trap that made round 2's $HOME fix silently inert.
   const real = fs.realpathSync(d);
-  assert.match(wrapper, new RegExp(`cd "${real.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`), 'the unit cd\'s to the emit directory');
+  // Single-quoted now: JSON.stringify is not shell quoting, and a path can
+  // contain a command substitution.
+  assert.match(wrapper, new RegExp(`cd '${real.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`), 'the unit cd\'s to the emit directory');
   // …and with the project's lock held, the emitted unit must not run the agent.
   fs.mkdirSync(path.join(d, '.autopilot.lock'));
   fs.writeFileSync(path.join(d, '.autopilot.lock', 'pid'), String(process.pid));

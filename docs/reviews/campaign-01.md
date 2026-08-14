@@ -431,6 +431,58 @@ and criterion 1's evidence cell still said six — see `goal.md`. The other
 seven are recorded here for whichever iteration picks them up; none of them
 is fixed in this pass.
 
+## Round 7 — concurrency, ordering and time
+
+One reviewer, one lens, read-only, top tier: **«nothing here is single-threaded
+— two processes, and time itself»**. It was dispatched because every round
+before it had reviewed the code as if one process ran it, while the whole point
+of a carrier is that a scheduler fires it on an interval that has no idea a loop
+is already running.
+
+It returned **one fatal and five major, every one reproduced against running
+code**, and it is the round that most changes what this skill claims about
+itself.
+
+| # | Finding | Reproduction it ran |
+|---|---|---|
+| F1 | **FATAL — the lock is not mutually exclusive.** Reclaiming a stale lock was `rmSync` then `mkdirSync`: two syscalls, so a competitor's remove landed after the winner's create and both held it. | 1 contended start in 60 with two racers; 23 of 25 with sixty-four (up to 6 simultaneous holders); loop-vs-carrier at 250 µs offsets: 12 of 57; **end to end, both paid agents ran, 1 in 150** |
+| F2 | The emitted wrapper and `takeLock` disagree about «held». `kill -0 "$(cat pid)"` returns non-zero for an EMPTY argument and for EPERM alike, so the wrapper stole the lock in three states the library refuses — including a live process owned by another user. | deterministic, all three states |
+| F3 | The SIGKILL escalation closed over the mutable `child` and was never cleared, so it killed the **next** iteration's healthy agent — and with the default `--thrash 2` the loop then stopped the campaign blaming the operator's command. | `--timeout 1 --sleep 5 --max 2`: iteration 2 exit 137 at 5 s, ledger records it as the agent's own death |
+| F4 | `--timeout` ≥ 35792 overflows `setTimeout` and fires after 1 ms: asking for a very long timeout produced **no** timeout, while the loop printed the number asked for. | `--timeout 40000` → agent killed at 0 s, `timedOut:true` |
+| F5 | `release()` deleted the lock without checking it still owned it, stripping it from a process that had legitimately taken it after an operator cleared a stale one. | three-process sequence, third acquired while the second ran |
+| F6 | `cronFor` guards step-wrap in the minute and hour fields and forgets the day: «every 28 days» fires **23 times a year, not 13** — 1.8× the invocations the operator approved. | expanded against a real calendar |
+
+**What it ran and found nothing in** — worth as much as the findings, because
+these were open questions: 200 concurrent `prove --record` with 6 KB lines and
+50 with 400 KB lines, **0 malformed, 0 interleaved, 0 lost** (this closes the
+«concurrent `prove --record`» item that three rounds listed as not covered); 40
+concurrent appends to a `goal.md` with no trailing newline, no spurious blank
+line, so the thrash detector cannot be falsely reset that way; DST, which cannot
+reach this code at all (GitHub cron is UTC, launchd gets a pure interval).
+
+**What it could not land, and said so:** the clean-directory race between
+`mkdir` and the `pid` write. 102 swept offsets in one direction, 81 plus 40
+random in the other, zero hits; estimated width a few tens of microseconds. F2
+proves the window is exploitable, and it fails CLOSED — a skipped iteration, not
+two agents. Recorded as a limit of the check, not as an absence of the bug.
+
+**Fixed in the same pass, each with a guard watched failing first**
+(`test/lock-oracle.test.mjs`, plus two rows in `carrier-oracle` and two in
+`loop-oracle`): the reclaim is now a single atomic `rename`; `releaseLock`
+checks the pid is ours; the escalation captures **this** iteration's child and
+is cleared with the timeout; `--timeout` is bounded at a day and refuses
+anything it cannot honour; the wrapper's lock line fails closed and only
+reclaims a numeric pid that neither `kill -0` nor `ps -p` can find; a
+day-of-month step is refused outright, since cron cannot express one honestly.
+
+**The observation that outlives the findings:** the reviewer noticed the working
+tree change under it mid-review — nine source files at 15:47 — verified every
+function it reports on was byte-identical in that diff, and named the shape:
+*two agents writing one working tree with nothing serialising them is F1 at the
+campaign level.* The campaign has no lock of its own. It is recorded in
+`decisions.md` rather than fixed, because the serialisation that exists — one
+human, one terminal — held throughout.
+
 ## What none of it covers
 
 - Windows. No reviewer had a host; `path.join` backslashes in `args`, and the

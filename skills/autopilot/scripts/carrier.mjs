@@ -158,8 +158,19 @@ function cronFor(mins) {
   }
   if (hours % 24) die('past a day, use a whole number of days.');
   const days = hours / 24;
-  if (days > 28) die('a period longer than 28 days is not expressible in cron — schedule it yourself.');
-  return days === 1 ? '0 0 * * *' : `0 0 */${days} * *`;
+  /**
+   * A day-of-month step divides NOTHING: months are 28, 29, 30 or 31 days, so
+   * every `N>1` wraps at the month boundary. «Every 28 days» fired 23 times a
+   * year instead of 13 — 1.8× the invocations the operator approved. This is
+   * the same wrap this function refuses one field up, and it was unguarded here.
+   */
+  if (days !== 1) {
+    die(`a cron schedule cannot fire every ${days} days: a day-of-month step wraps at the end of\n` +
+      'every month, so the real period is not the one you asked for. One day is the longest\n' +
+      'period cron expresses honestly — for anything longer, schedule it yourself, or use\n' +
+      "launchd's StartInterval, which is an exact period.");
+  }
+  return '0 0 * * *';
 }
 const cronExpr = kind === 'github' ? cronFor(minutes) : '';
 
@@ -178,10 +189,30 @@ const cronExpr = kind === 'github' ? cronFor(minutes) : '';
  *     staleness timeout, so a crash leaves the lock directory behind — the message
  *     below says to delete it, and that is the whole recovery path.
  */
+/**
+ * POSIX single-quoting. `JSON.stringify` escapes `"` and `\` and leaves `$`,
+ * backtick and `(` alone — so a directory named `proj$(touch pwned)` put a
+ * command substitution into a unit that a scheduler runs as the user, every
+ * interval, forever. Reproduced from a plist, executed exactly as launchd
+ * would. Inside single quotes the shell expands nothing.
+ */
+const shq = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+/** …and every value that reaches the plist is XML. `StandardOutPath` was not
+ *  escaped while the wrapper beside it was, so a directory named `a&b<c`
+ *  produced a plist that does not parse — and nested names injected balanced,
+ *  VALID keys: `RunAtLoad` flipped to true against a hard-coded false. */
+const xml = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 const wrapper = [
-  `cd ${JSON.stringify(project)} || exit 1`,
-  `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do { [ -e "$s" ] || [ -L "$s" ]; } && exit 0; done`,
-  `mkdir ${LOCK_DIR} 2>/dev/null || { kill -0 "$(cat ${LOCK_DIR}/pid 2>/dev/null)" 2>/dev/null && exit 0; rm -rf ${LOCK_DIR}; mkdir ${LOCK_DIR} || exit 0; }`,
+  `cd ${shq(project)} || exit 1`,
+  `for s in ${stopPaths.map(shq).join(' ')}; do { [ -e "$s" ] || [ -L "$s" ]; } && exit 0; done`,
+  // The shell's `kill -0` returns non-zero for an EMPTY argument and for EPERM
+  // alike, so the old one-liner reclaimed in three states `takeLock` correctly
+  // refuses: no pid file yet, an empty pid, and a live process owned by someone
+  // else. «EPERM counts as alive» was true of lib.mjs and false of the copy
+  // that actually runs unattended. Fail CLOSED, and only reclaim a pid that is
+  // numeric and provably gone.
+  `mkdir ${LOCK_DIR} 2>/dev/null || { p=$(cat ${LOCK_DIR}/pid 2>/dev/null); case "$p" in ''|*[!0-9]*) exit 0;; esac; kill -0 "$p" 2>/dev/null && exit 0; ps -p "$p" >/dev/null 2>&1 && exit 0; rm -rf ${LOCK_DIR}; mkdir ${LOCK_DIR} || exit 0; }`,
   `echo $$ > ${LOCK_DIR}/pid; trap 'rm -rf ${LOCK_DIR}' EXIT`,
   `mkdir -p ${logDir}`,
   agent,
@@ -195,19 +226,19 @@ const LAUNCHD = () => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${label}</string>
+  <key>Label</key><string>${xml(label)}</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>${wrapper.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</string>
+    <string>${xml(wrapper)}</string>
   </array>
   <key>StartInterval</key><integer>${minutes * 60}</integer>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>${path.join(project, logDir, 'carrier.log')}</string>
-  <key>StandardErrorPath</key><string>${path.join(project, logDir, 'carrier.log')}</string>
+  <key>StandardOutPath</key><string>${xml(path.join(project, logDir, 'carrier.log'))}</string>
+  <key>StandardErrorPath</key><string>${xml(path.join(project, logDir, 'carrier.log'))}</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}</string></dict>
+  <dict><key>PATH</key><string>${xml(process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin')}</string></dict>
 </dict>
 </plist>`;
 

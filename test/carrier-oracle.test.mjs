@@ -143,3 +143,57 @@ test('and a period it cannot express is refused rather than approximated', () =>
     assert.equal(r.status, 2, `${every} was accepted and emitted «${r.out.split('\n').find((l) => l.includes('cron:'))?.trim()}»`);
   }
 });
+
+test('the emitted wrapper and takeLock agree about what «held» means', async () => {
+  /**
+   * The wrapper is the copy that runs unattended every interval for weeks, and
+   * it was the copy that disagreed. `kill -0 "$(cat pid)"` returns non-zero for
+   * an EMPTY argument and for EPERM alike, so it reclaimed in three states
+   * `takeLock` correctly refuses — including a live process owned by another
+   * user (pid 1 is launchd). Two agents on one ledger is what that buys.
+   */
+  const { takeLock, LOCK_DIR } = await import(path.join(SCRIPTS, 'lib.mjs'));
+  const unxml = (v) => v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+  const CASES = [
+    ['no pid file yet', () => {}],
+    ['an empty pid file', (lock) => fs.writeFileSync(path.join(lock, 'pid'), '')],
+    ['a live process owned by someone else', (lock) => fs.writeFileSync(path.join(lock, 'pid'), '1')],
+    ['a live process of our own', (lock) => fs.writeFileSync(path.join(lock, 'pid'), String(process.pid))],
+  ];
+  const disagree = [];
+  for (const [name, seed] of CASES) {
+    const d = tmp();
+    // Emitted FROM the case directory, so the wrapper's own `cd` lands here.
+    const r = emit(['--agent', 'echo AGENT-RAN', '--kind', 'launchd'], d);
+    assert.equal(r.status, 0, r.err.split('\n')[0]);
+    const wrapper = unxml(r.out.match(/<string>(cd [\s\S]*?)<\/string>/)?.[1] ?? '');
+    assert.ok(/mkdir/.test(wrapper), 'no wrapper in the emitted plist');
+
+    const lock = path.join(d, LOCK_DIR);
+    fs.mkdirSync(lock);
+    seed(lock);
+    const lib = takeLock(lock);
+    // The WHOLE wrapper, run by the interpreter launchd would use.
+    const sh = spawnSync('/bin/sh', ['-c', wrapper], { cwd: d, encoding: 'utf8' });
+    const wrapperRan = /AGENT-RAN/.test(sh.stdout ?? '');
+    if (lib !== wrapperRan) {
+      disagree.push(`${name}: lib.mjs ${lib ? 'took the lock' : 'refused'}, the wrapper ${wrapperRan ? 'STOLE it and RAN THE AGENT' : 'refused'}`);
+    }
+  }
+  assert.deepEqual(disagree, [], `the unattended copy of the lock is not the tested one:\n  ${disagree.join('\n  ')}`);
+});
+
+test('a period cron cannot express in DAYS is refused too', () => {
+  // The day field was left unguarded while the minute and hour fields were
+  // checked: a day-of-month step divides nothing, because months are 28, 29, 30
+  // or 31 days. «Every 28 days» fired 23 times a year instead of 13 — 1.8x the
+  // invocations the operator approved, on the carrier that spends money.
+  for (const every of ['2880', '4320', '40320']) {
+    const r = emit(['--agent', 'x', '--kind', 'github', '--every', every]);
+    assert.equal(r.status, 2,
+      `--every ${every} minutes was accepted and emitted «${r.out.split('\n').find((l) => l.includes('cron:'))?.trim()}»`);
+  }
+  const day = emit(['--agent', 'x', '--kind', 'github', '--every', '1440']);
+  assert.equal(day.status, 0, 'a daily schedule, which cron DOES express, was refused');
+});

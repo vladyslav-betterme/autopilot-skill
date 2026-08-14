@@ -23,3 +23,38 @@ Admission bar: someone could reasonably have decided the other way.
 | 2026-08-14 | **A win whose subject is this skill's own doctrine goes into SKILL.md, not into a skill of its own.** Three are at the three-time threshold — «execute the artifact you emitted» (§2), «re-run the reviewer's own reproduction» (§3), «delete the pipeline instead of fixing its stages» (§2) — and all three are written into the sections that already own those steps | The three-times rule now has a stated class of exception, and someone will have to judge the next candidate against it | A separate skill answering «how do I prove this» beside the skill whose entire subject is proving is two answers to one question — this repo's most-repeated cause, with 21 rows of evidence. `references/distillation.md` already says to delete a skill when its rule became structural; writing one that is born structural is the same error, earlier. The test is: would this pattern help someone who is NOT running this loop? If yes, write the skill. All three of these are about running this loop. |
 | 2026-08-14 | **The emitted GitHub workflow is PARSED, never executed by GitHub.** A drill asked whether that was considered or merely unnoticed — the way `cron` went unnoticed for three rounds | §7's clause 2 is satisfied for the plist (`plutil` + the wrapper is run), the generated server (driven), and the schedule (expanded and its gaps measured); for the workflow it is satisfied by a real YAML reader and NOT by a runner | Running it means pushing a workflow to a repository and paying for a scheduled agent — the one thing this campaign has refused to do without the owner. Recorded as considered, not as covered. **If it is ever armed, the first run is the check**, and `goal.md`'s parked row says so. |
 
+
+## The campaign itself has no lock — recorded, not fixed
+
+Round 7's reviewer watched the working tree change under it mid-review (nine
+source files at 15:47), verified every function it reported on was byte-identical
+in that diff, and named the shape: **two agents writing one working tree with
+nothing serialising them is the same defect as the lock fatal it had just found,
+one level up.**
+
+Not fixed. `loop.mjs` locks a PROJECT so two loops cannot run on one ledger, and
+that is the case a scheduler can create by itself. A reviewer subagent running
+while the orchestrator edits is created only by a human dispatching both, and the
+serialisation that exists — one person, one terminal, reviewers that are
+read-only by construction — held for every round of this campaign. Locking a
+read-only reviewer out of a repository would also make the cheap parallel council
+in `references/critics.md` impossible, which is the practice that found most of
+these defects.
+
+**The cost, stated:** a review of a moving tree can report a finding against code
+that no longer exists. The mitigation is the one round 7 used unprompted — say
+which diff you verified your findings against. That is now the expectation for
+any reviewer dispatched while work continues, and it is cheaper than the lock.
+
+## Concurrent `prove --record` — measured, and it holds
+
+Three rounds listed this as «not covered». Round 7 measured it: 200 concurrent
+`--record` runs with 6 KB notes, then 50 with 400 KB notes, on APFS. **0
+malformed, 0 interleaved, 0 lost lines.** A single `appendFileSync` is one
+`O_APPEND` write and holds well past PIPE_BUF here. Also measured: 40 concurrent
+appends to a `goal.md` with no trailing newline produce no spurious blank line,
+so the thrash detector cannot be reset that way.
+
+Recorded as a decision rather than a test because the property belongs to the
+filesystem, not to this repo: on a filesystem without atomic O_APPEND (some
+network mounts) it would not hold, and nothing here would notice.

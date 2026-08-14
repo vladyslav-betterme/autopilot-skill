@@ -51,12 +51,13 @@ guard is a new row.
 | `loop` thrash detection | did this iteration do anything | **yes** — `test/loop-oracle.test.mjs`, ground truth is the git HEAD plus the ledger's bytes, measured outside the loop |
 | every script's printed instructions | can the next actor run what it was told | **yes** — `test/printed-instructions-oracle.test.mjs`, 16 invocations |
 | carrier schedule expression | does this fire at the period asked | **yes** — `test/carrier-oracle.test.mjs` expands it over a week and measures every gap |
+| the lock | how many processes believe they hold it AT ONCE | **yes** — `test/lock-oracle.test.mjs`, 8 racers × 8 trials against a stale lock, counted from outside; plus a differential row in `carrier-oracle` that gives `takeLock` and the EMITTED wrapper the same four states and fails when they disagree |
 
 ## Done-criteria
 
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
-| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **no** — conditions 1 and 2 hold (**7 guards of 7** have oracles; every emitted grammar is read by its interpreter, with the GitHub workflow parsed rather than run — recorded in `decisions.md` as considered, not covered). Condition 3 is the open one: the streak is **0 of 2**, and rounds 5 and 6 each added rows | `docs/reviews/campaign-01.md` §§ Round 4, Round 5 |
+| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **no** — conditions 1 and 2 hold (**8 guards of 8** have oracles; every emitted grammar is read by its interpreter, with the GitHub workflow parsed rather than run — recorded in `decisions.md` as considered, not covered). Condition 3 is the open one: the streak is **0 of 2** — round 7 added three causes, the sharpest a fatal in the lock itself | `docs/reviews/campaign-01.md` §§ Round 4, Round 5 |
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
 | 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | **the procedure, because «the orchestrator records it» is unclosable when the resuming session IS the orchestrator:** dispatch a fresh read-only drill, paste its verdict verbatim into `docs/reviews/`, and mark this met only if it answered YES to «could a fresh session CLOSE the work». A drill run by the party it audits does not count | partly — drill 4 (fresh read-only subagent, `docs/**` only) verdict: **NO**. RESUME is clear; CLOSE is not — 8 findings, the two sharpest being a stale guard count in this file (fixed above, same commit) and a «Cold-start drill 3» that `STEERING.md` and this file both name but that has no section anywhere in the ledger | `docs/reviews/campaign-01.md` §§ Cold-start drill, Cold-start drill 2, Cold-start drill 4 |
@@ -72,9 +73,9 @@ It is neither: it is a bounded plan.
 
 | step | what | who |
 |---|---|---|
-| 1 | **Round 7** — fresh lenses, over everything. Count new rows with `grep -oE '\\| R[0-9]+' docs/failures.md \| sort \| uniq -c` | a council that did not do the work |
-| 2 | If round 7 adds a row: fix it, add the oracle that would have caught it, and step 1 again. Rounds are cheap; a new CAUSE means a surface nobody had covered | |
-| 3 | If round 7 adds none: **round 8**, same shape. Two in a row and condition 3 is met | |
+| 1 | **Round 8** — fresh lenses, over everything, and at least one that treats the program as MORE THAN ONE PROCESS (round 7's lens, which found the only fatal that let two paid agents run). Count new rows with `grep -oE '\\| R[0-9]+' docs/failures.md \| sort \| uniq -c` | a council that did not do the work |
+| 2 | If round 8 adds a row: fix it, add the oracle that would have caught it, and step 1 again. Rounds are cheap; a new CAUSE means a surface nobody had covered | |
+| 3 | If round 8 adds none: **round 9**, same shape. Two in a row and condition 3 is met | |
 | 4 | If three consecutive rounds each add exactly one row of the same kind, that is not convergence — reclassify it as a standing limitation in `decisions.md` and say so out loud | the owner decides |
 
 New rows per round so far: **R1 9 · R2 1 · R3 0 · R5 5 · R6 4** (R4's are folded
@@ -98,6 +99,7 @@ is reachable.
 | 4 | prove · ledger+carrier · new-mcp · `loop.mjs` (first outside look) · convergence analyst | 9 | 8 | — | every fatal but `loop`'s was inside a previous round's fix; cron was CUT and §7 was replaced as a result |
 | 5 | the three scripts nobody had ever reviewed · a re-review of round 4's fixes · cold-start drill 3 | 14 | 8 | — | eight in unreviewed scripts, six in round 4's own fixes; **the oracle itself was found decorative** and rebuilt |
 | 6 | money & irreversibility · a stranger's first run · honesty audit | 2 | 7 (+16 doc claims) | — | **one new cause** — «the tool's own printed instruction does not work» — now covered by a seventh oracle |
+| 7 | concurrency, ordering and time — the first reviewer to treat this as more than one process | 1 | 5 | — | **three new causes.** The lock was not mutually exclusive: both paid agents ran, 1 contended start in 150. Also closed the «concurrent `prove --record`» item three rounds had listed as not covered — 200 concurrent 6 KB appends, 0 lost |
 
 ## Iteration log
 
@@ -189,3 +191,7 @@ is reachable.
   up next.
 - **prove** `npm run verify` → 0 — cold-start drill 4: verdict NO recorded, guard count 6→7 fixed, 8 findings ledgered · 2026-08-14T12:03:35Z
 - **prove** `npm run verify` → 0 — the timeout and heartbeat a real run demanded · 2026-08-14T12:16:52Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — drill 4's findings · 2026-08-14T12:21:57Z
+- **prove** `npm run verify` → 1 — R7 hostile input + MCP conformance · 2026-08-14T12:54:12Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R7 fixes · 2026-08-14T12:58:16Z
+- **prove** `npm run verify` → 0 — R7: atomic lock reclaim, wrapper/takeLock parity, stray SIGKILL escalation, day-step cron, timeout overflow · 2026-08-14T13:10:18Z

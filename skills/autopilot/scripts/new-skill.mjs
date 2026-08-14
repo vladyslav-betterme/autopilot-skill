@@ -49,6 +49,21 @@ const exists = (p) => { try { fs.lstatSync(path.join(root, p)); return true; } c
 const home = exists('.agents/skills') ? '.agents/skills'
   : AGENT_DIRS.find(exists) ?? '.agents/skills';
 
+/**
+ * The elected home must be INSIDE the project. `new-mcp.mjs` got this check;
+ * this file, one over, did not — so a repository shipping
+ * `.claude/skills -> ~/.claude/skills` had a skill written into the user's
+ * global directory while the output said `.claude/skills/<name>`. That file is
+ * loaded by the agent in every future session, on every project, and its body
+ * comes from stdin.
+ */
+const rootReal = fs.realpathSync(root);
+const homeReal = (() => { try { return fs.realpathSync(path.join(root, home)); } catch { return path.resolve(root, home); } })();
+if (homeReal !== rootReal && !homeReal.startsWith(rootReal + path.sep)) {
+  die(`«${home}» really resolves to ${homeReal}, which is outside this project.\n` +
+    'Refusing: a skill written there is loaded in every future session, on every project.');
+}
+
 const conflicts = ['.agents/skills', ...AGENT_DIRS].filter((d) => exists(path.join(d, name)));
 if (conflicts.length) {
   die(`«${name}» already exists in ${conflicts.join(', ')} — extend it, or pick a different name.\n` +
