@@ -3,9 +3,10 @@
 The point is not opinions. It is finding the defect **you** cannot see because
 you did the work. In the campaign that produced this file, of the FATALS found
 in each round that re-reviewed a previous round's repairs, the share living
-inside those repairs was 4 of 4, then 2 of 5, then 8 of 9, then 6 of 14 —
-countable in `docs/reviews/campaign-01.md`'s round table, which the «58–68 %»
-that stood here was not. Your own number will differ; that it is large is the
+inside those repairs was 4 of 4, then 2 of 5, then 7 of 9 —
+countable in the round table in `docs/goal.md`, which the «58–68 %» that stood
+here was not. (Round 5's split is recorded two different ways in the ledger, so
+it is left out rather than quoted from whichever version flatters the claim.) Your own number will differ; that it is large is the
 part that keeps being true.
 
 ```

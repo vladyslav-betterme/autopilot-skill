@@ -212,8 +212,23 @@ const wrapper = [
   // else. «EPERM counts as alive» was true of lib.mjs and false of the copy
   // that actually runs unattended. Fail CLOSED, and only reclaim a pid that is
   // numeric and provably gone.
-  `mkdir ${LOCK_DIR} 2>/dev/null || { p=$(cat ${LOCK_DIR}/pid 2>/dev/null); case "$p" in ''|*[!0-9]*) exit 0;; esac; kill -0 "$p" 2>/dev/null && exit 0; ps -p "$p" >/dev/null 2>&1 && exit 0; rm -rf ${LOCK_DIR}; mkdir ${LOCK_DIR} || exit 0; }`,
-  `echo $$ > ${LOCK_DIR}/pid; trap 'rm -rf ${LOCK_DIR}' EXIT`,
+  // Reclaim, then VERIFY THE CLAIM — the same two repairs `lib.mjs` needed, in
+  // shell. `rm -rf` + `mkdir` is two syscalls: a competitor reclaims the same
+  // stale lock in between and the first process then deletes the FRESH one, so
+  // eight racers produced 44 agent runs where 8 was correct. Moving it aside
+  // with `mv` and checking WHAT MOVED closes most of it; writing the pid and
+  // reading it back after a settle closes the rest, because the claim is the
+  // pid file — whatever the syscalls did, exactly one pid survives in it.
+  // `ps` and `sleep` are EXTERNAL commands and the plist bakes PATH at emit
+  // time. Without `ps` the EPERM fallback silently vanished and the wrapper
+  // stole a live root-owned lock; without `sleep` the claim check collapsed.
+  // Both are checked first, and a machine missing either gets a refusal it can
+  // read in the carrier log — not a daemon quietly doing the wrong thing.
+  `command -v ps >/dev/null 2>&1 && command -v sleep >/dev/null 2>&1 || { echo "autopilot: no ps or no sleep on PATH — refusing to touch the lock" >&2; exit 0; }`,
+  `mkdir ${LOCK_DIR} 2>/dev/null || { p=$(cat ${LOCK_DIR}/pid 2>/dev/null | tr -d '[:space:]'); if [ -z "$p" ]; then rmdir ${LOCK_DIR} 2>/dev/null && mkdir ${LOCK_DIR} 2>/dev/null || exit 0; else case "$p" in *[!0-9]*) exit 0;; esac; kill -0 "$p" 2>/dev/null && exit 0; ps -p "$p" >/dev/null 2>&1 && exit 0; mv ${LOCK_DIR} ${LOCK_DIR}.stale.$$ 2>/dev/null || exit 0; q=$(cat ${LOCK_DIR}.stale.$$/pid 2>/dev/null | tr -d '[:space:]'); if [ "$q" != "$p" ]; then mv ${LOCK_DIR}.stale.$$ ${LOCK_DIR} 2>/dev/null || rm -rf ${LOCK_DIR}.stale.$$; exit 0; fi; rm -rf ${LOCK_DIR}.stale.$$; mkdir ${LOCK_DIR} 2>/dev/null || exit 0; fi; }`,
+  `echo $$ > ${LOCK_DIR}/pid; sleep 1; [ "$(cat ${LOCK_DIR}/pid 2>/dev/null)" = "$$" ] || exit 0`,
+  // …and release only what we still hold, for the same reason `releaseLock` does.
+  `trap '[ "$(cat ${LOCK_DIR}/pid 2>/dev/null)" = "$$" ] && rm -rf ${LOCK_DIR}' EXIT`,
   `mkdir -p ${logDir}`,
   agent,
   // `;`, never `&&`. Joined with `&&` this reads fine and is silently inert:

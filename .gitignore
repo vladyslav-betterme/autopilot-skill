@@ -5,3 +5,4 @@
 agent-logs/
 .autopilot.lock/
 node_modules/
+.autopilot.lock*

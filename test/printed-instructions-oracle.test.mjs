@@ -112,6 +112,26 @@ test('nothing any script prints is a placeholder, a dead path, or a flag it refu
       if (!fs.existsSync(target)) broken.push(`${where}: printed «node ${m[1]}», which does not exist from the project root`);
     }
 
+    // 3b. A printed SHELL command must name a binary that exists and a
+    //     subcommand that binary knows. `launchctl bootstrap` misspelled as
+    //     `bootstrapp` left all 161 tests green — and that line is the entire
+    //     arming path, which is all of criterion 2's evidence. Only `node …`
+    //     was ever checked, because only `node …` was easy.
+    for (const line of printed.split('\n')) {
+      const m = line.match(/^\s*(launchctl|crontab|plutil)\s+([a-z][\w-]*)/);
+      if (!m) continue;
+      const [, bin, sub] = m;
+      if (spawnSync('command', ['-v', bin], { shell: true, stdio: 'ignore' }).status !== 0) {
+        broken.push(`${where}: printed «${bin} …», and there is no ${bin} on this machine`);
+        continue;
+      }
+      const help = spawnSync(bin, ['help'], { encoding: 'utf8' });
+      const text = `${help.stdout ?? ''}${help.stderr ?? ''}`;
+      if (text && !new RegExp(`(^|\\s)${sub}(\\s|$)`, 'm').test(text)) {
+        broken.push(`${where}: printed «${bin} ${sub}», and ${bin} does not know the subcommand ${sub}`);
+      }
+    }
+
     // 4. A bare «read <path>» must name something that is there.
     for (const m of printed.matchAll(/read ([\w./-]+\.md)\b/g)) {
       if (!fs.existsSync(path.resolve(d, m[1]))) broken.push(`${where}: printed «read ${m[1]}», which does not exist`);

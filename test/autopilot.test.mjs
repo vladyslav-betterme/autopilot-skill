@@ -1319,9 +1319,27 @@ test('--thrash 0 is refused', () => {
 
 test('two loops cannot share one ledger', () => {
   const d = looped();
-  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  const lock = path.join(d, '.autopilot.lock');
+  fs.mkdirSync(lock);
+  // A LIVE holder — this test process. The lock used to be seeded EMPTY, which
+  // is a different thing: a lock is now built complete and moved into place in
+  // one rename, so a pidless directory is residue from a crash, and refusing it
+  // forever is a loop that can never run again. That state is covered below.
+  fs.writeFileSync(path.join(lock, 'pid'), String(process.pid));
   const out = (() => { try { return loop(d, ['--agent', 'echo x', '--sleep', '0']); } catch (err) { return err.stderr; } })();
   assert.match(out, /another iteration is running/);
+});
+
+test('a lock left by a crash does not disable the loop forever', () => {
+  // The residue: a lock directory with no pid file. Both `takeLock` and the
+  // emitted carrier wrapper recover it — a competitor's reclaim landing between
+  // an old version's `mkdir` and its pid write produced exactly this, four
+  // times in thirty trials, and every run afterwards reported success while
+  // never invoking the agent.
+  const d = looped();
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  const out = (() => { try { return loop(d, ['--agent', 'echo AGENT-RAN', '--sleep', '0', '--max', '1', '--thrash', '99']); } catch (err) { return `${err.stdout ?? ''}${err.stderr ?? ''}`; } })();
+  assert.match(out, /AGENT-RAN/);
 });
 
 test('the loop refuses to run without a goal', () => {

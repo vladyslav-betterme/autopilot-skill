@@ -3,7 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 
 /**
  * ORACLES for the two grammars `carrier.mjs` emits but does not run.
@@ -170,10 +170,19 @@ test('the emitted wrapper and takeLock agree about what «held» means', async (
     const wrapper = unxml(r.out.match(/<string>(cd [\s\S]*?)<\/string>/)?.[1] ?? '');
     assert.ok(/mkdir/.test(wrapper), 'no wrapper in the emitted plist');
 
+    // Each copy gets its OWN instance of the state. They used to share one, and
+    // `takeLock` mutates what it judges — since it now RECOVERS a pidless
+    // residue, it left a live lock behind and the wrapper was scored as
+    // disagreeing for refusing it, which was correct behaviour.
+    const libDir = fs.mkdtempSync(path.join(d, 'lib-'));
+    const libLock = path.join(libDir, LOCK_DIR);
+    fs.mkdirSync(libLock);
+    seed(libLock);
+    const lib = takeLock(libLock);
+
     const lock = path.join(d, LOCK_DIR);
     fs.mkdirSync(lock);
     seed(lock);
-    const lib = takeLock(lock);
     // The WHOLE wrapper, run by the interpreter launchd would use.
     const sh = spawnSync('/bin/sh', ['-c', wrapper], { cwd: d, encoding: 'utf8' });
     const wrapperRan = /AGENT-RAN/.test(sh.stdout ?? '');
@@ -196,4 +205,70 @@ test('a period cron cannot express in DAYS is refused too', () => {
   }
   const day = emit(['--agent', 'x', '--kind', 'github', '--every', '1440']);
   assert.equal(day.status, 0, 'a daily schedule, which cron DOES express, was refused');
+});
+
+test('the emitted wrapper is mutually exclusive under contention, not just in sequence', async () => {
+  /**
+   * The parity test above gives both copies four states SEQUENTIALLY. That is
+   * not the case that costs money: **contention over a stale lock** is, and the
+   * wrapper carried the two-syscall reclaim (`rm -rf` then `mkdir`) for a full
+   * round after `lib.mjs` stopped using it — 44 agent runs where 8 was correct,
+   * 3 to 7 concurrent in every trial.
+   *
+   * Measured the way it must be: each winner records the moment it took the
+   * lock and the moment it let go, and the failure is an OVERLAP, not a count.
+   * Two runs one after the other are a legitimate handover; two runs at the
+   * same instant are two paid agents on one ledger.
+   */
+  const { LOCK_DIR } = await import(path.join(SCRIPTS, 'lib.mjs'));
+  const unxml = (v) => v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const RACERS = 8, TRIALS = 4, HOLD = 2;
+
+  const overlaps = [];
+  for (let trial = 0; trial < TRIALS; trial++) {
+    const d = tmp();
+    // The agent stamps when it started and when it finished, then holds.
+    const r = emit(['--agent', `printf 'S %s\\n' "$(date +%s%3N 2>/dev/null || python3 -c 'import time;print(int(time.time()*1000))')" >> ran.log; sleep ${HOLD}; printf 'E %s\\n' "$(date +%s%3N 2>/dev/null || python3 -c 'import time;print(int(time.time()*1000))')" >> ran.log`, '--kind', 'launchd'], d);
+    assert.equal(r.status, 0, r.err.split('\n')[0]);
+    const wrapper = unxml(r.out.match(/<string>(cd [\s\S]*?)<\/string>/)?.[1] ?? '');
+
+    const lock = path.join(d, LOCK_DIR);
+    fs.mkdirSync(lock);
+    const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+    fs.writeFileSync(path.join(lock, 'pid'), String(dead));      // stale
+
+    await Promise.all(Array.from({ length: RACERS }, () => new Promise((done) => {
+      const c = spawn('/bin/sh', ['-c', wrapper], { cwd: d, stdio: 'ignore' });
+      c.on('close', done);
+    })));
+
+    const log = (() => { try { return fs.readFileSync(path.join(d, 'ran.log'), 'utf8'); } catch { return ''; } })();
+    const events = log.trim().split('\n').filter(Boolean).map((l) => l.split(' '));
+    // Sweep the timeline: how many agents were inside their hold at once?
+    let live = 0, peak = 0;
+    for (const [kind] of events.sort((a, b) => Number(a[1]) - Number(b[1]))) {
+      live += kind === 'S' ? 1 : -1;
+      peak = Math.max(peak, live);
+    }
+    if (peak > 1) overlaps.push(`trial ${trial}: ${peak} agents ran AT ONCE (${events.filter((e) => e[0] === 'S').length} runs from ${RACERS} racers)`);
+  }
+  assert.deepEqual(overlaps, [], `the copy that runs unattended is not mutually exclusive:\n  ${overlaps.join('\n  ')}`);
+});
+
+test('the launchd unit spends at the period asked, and not at load', () => {
+  /**
+   * `StartInterval` is SECONDS. Emitting minutes there turns «every 30 min»
+   * into every 30 SECONDS — 2880 paid invocations a day where 48 were priced —
+   * and `RunAtLoad true` adds one at every login. Both are the launchd path's
+   * only cost knobs, `goal.md` calls that path «the verified path», and a
+   * mutation of either survived all 161 tests: `plutil -lint` reads syntax, and
+   * every schedule assertion in this file is about the GitHub cron.
+   */
+  for (const [every, seconds] of [['20m', 1200], ['30m', 1800], ['1h', 3600], ['6h', 21_600], ['1440m', 86_400]]) {
+    const r = emit(['--agent', 'x', '--kind', 'launchd', '--every', every]);
+    assert.equal(r.status, 0, `${every} was refused: ${r.err.split('\n')[0]}`);
+    const got = Number(r.out.match(/<key>StartInterval<\/key><integer>(\d+)<\/integer>/)?.[1]);
+    assert.equal(got, seconds, `--every ${every} emitted StartInterval ${got}; launchd reads that as SECONDS, so it would fire ${(seconds / (got || 1)).toFixed(0)}x too often`);
+    assert.match(r.out, /<key>RunAtLoad<\/key><false\/>/, 'RunAtLoad must be false: true spends one invocation at every login and bootstrap');
+  }
 });

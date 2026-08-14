@@ -60,8 +60,8 @@ inventing a direction.
 | **A guard written for one process, in a program a scheduler runs twice** — a non-atomic lock reclaim, a release that does not check ownership, a kill timer that outlives its own iteration, a cron step that wraps at the month boundary | 4 | R7 |
 | **The tested copy of a rule and the copy that RUNS are different files** — «EPERM counts as alive» was true of `lib.mjs` and false of the shell line the carrier emits | 1 | R7 |
 | **One step made atomic, while the RACE spans two** — `rename` is atomic, but «is this holder dead» and «remove its lock» are still two steps, and a competitor reclaims in between | 1 | R8 |
-| **A stopping rule proved reachable by a number nobody ran the command for** — «6 → 1 → 0 → 2 new causes per round» matched the counter on no round at all, and its load-bearing 0 was a round with four rows | 1 | R8 |
 | **An enumeration that is a claim of exhaustiveness, counted from memory** — «four stopping conditions» with five in the code; «the default cadence» naming one number where three mechanisms have three | 2 | R8 |
+| **A guard that cannot be reached by the oracle that certifies it** — eight mutations survived all 161 tests, including a deleted process-substitution clause, a launchd interval in the wrong unit, and three config readers whose absence is the round-1 false-absence fatal | 8 | R8 |
 | **A number that cannot be honoured, accepted as if it were** — `--timeout 40000` overflowed `setTimeout` and fired after 1 ms, so a very long timeout became no timeout | 1 | R7 |
 
 ## Patterns
@@ -336,3 +336,38 @@ fact instead.
 runs and failed under load. A concurrency guard that has not been run under load
 has not been run. This one now rides in the full suite, where the machine is busy
 by construction.
+
+### A guard the oracle that certifies it cannot reach (R8)
+
+A mutation tester deleted one clause at a time from every guard in this repo and
+ran the suite. **Eight mutations survived all 161 tests** — the guard table said
+«yes, it has an oracle» for every one of them:
+
+| deleted | what the user loses |
+|---|---|
+| `prove`'s process-substitution clause | `→ 0` recorded in the ledger for a check that printed five type errors and exited 1 |
+| `StartInterval` in minutes instead of seconds | launchd fires every 30 s: **2880 paid invocations a day where 48 were priced** |
+| `RunAtLoad` flipped to true | an unapproved paid invocation at every login |
+| the Cursor, Gemini-user and `~/.claude.json` local-scope readers (three separate rows) | the round-1 false-absence fatal, for free: «no MCP here» → the ladder says «build it» for a server that is already configured |
+| the transport, reported as `stdio` for everything | an inventory that invents transports, under a docstring claiming it checks them |
+| `launchctl bootstrap` misspelled in the printed install line | the arming instruction does not run — and that line is **all of criterion 2's evidence** |
+
+**Why an oracle missed them, in one sentence each:** `prove`'s ground truth
+(`bash -e -o pipefail`) cannot judge a construct whose whole defect is that the
+shell does not see the failure — 19 of 37 corpus rows have truth 0, so the
+property cannot fire on them. `carrier-oracle`'s schedule assertions all pass
+`--kind github`, so the launchd unit's two cost knobs were never read.
+`tools-oracle` covered 6 of 13 config readers and never asserted a transport.
+`printed-instructions-oracle` validated `node …` paths and `read …md` paths —
+every printed SHELL command was out of scope, because only `node` was easy.
+
+**The repair is the same shape in all four: assert the thing the guard PROMISES,
+not the thing that is convenient to compare.** A refusal is not a comparison —
+nine constructs are now asserted refused, one row each. The launchd interval is
+compared against the period asked for, in seconds. The five missing readers are
+five new layouts. Every printed `launchctl`/`crontab`/`plutil` line now has its
+binary and its subcommand checked against that binary's own help.
+
+**The tell:** an oracle whose corpus grows by rows that its ground truth scores
+0. Count how many rows can actually FIRE — if the answer is «half», the other
+half is decoration, and this repo has now made that mistake twice.

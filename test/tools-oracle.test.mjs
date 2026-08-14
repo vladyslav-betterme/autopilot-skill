@@ -86,11 +86,44 @@ const CASES = [
     expect: { servers: [], unreadable: 0 },
   },
   {
+    name: 'Cursor — a project reader with no test at all until round 8',
+    files: { 'project/.cursor/mcp.json': '{"mcpServers":{"cursor-proj":{"command":"node","args":["c.mjs"]}}}' },
+    expect: { servers: ['cursor-proj'], unreadable: 0 },
+  },
+  {
+    name: 'Gemini CLI, user scope — same',
+    files: { 'home/.gemini/settings.json': '{"mcpServers":{"gem-user":{"type":"http","url":"https://g"}}}' },
+    expect: { servers: ['gem-user'], unreadable: 0 },
+  },
+  {
+    name: 'opencode, user scope',
+    files: { 'home/.config/opencode/opencode.json': '{"mcp":{"oc-user":{"type":"local","command":["node","x.mjs"]}}}' },
+    expect: { servers: ['oc-user'], unreadable: 0 },
+  },
+  {
     name: 'opencode nests them under «mcp»',
     files: { 'project/opencode.json': '{"mcp":{"oc":{"type":"local","command":["node","x.mjs"]}}}' },
     expect: { servers: ['oc'], unreadable: 0 },
   },
 ];
+
+test('the LOCAL scope inside ~/.claude.json is read — the one its own comment calls forgotten', () => {
+  // `claude.projects[<project path>].mcpServers`. Dropping this reader survived
+  // all 161 tests, and it is the round-1 false-absence fatal for free: the
+  // ladder's rung 0 answers «nothing here», and the loop goes off to BUILD a
+  // server that is already configured.
+  const root = tmp();
+  const project = path.join(root, 'project');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+    projects: { [fs.realpathSync(project)]: { mcpServers: { 'local-scoped': { command: 'node', args: ['l.mjs'] } } } },
+  }));
+  const got = inventory(project, home);
+  assert.deepEqual(got.servers.map((s) => s.name), ['local-scoped'],
+    'the local scope of ~/.claude.json is not read');
+});
 
 test('what it reports is what the files contain — and unreadable is not absence', () => {
   const broken = [];
@@ -136,4 +169,33 @@ test('an empty inventory says which files it read, so «none» can be checked', 
   assert.deepEqual(got.servers, []);
   assert.ok(got.blind.length >= 4, 'it stopped saying what it cannot see');
   assert.match(JSON.stringify(got.blind), /not in these files/);
+});
+
+test('the transport it reports is the transport the file gives', () => {
+  // The docstring has always said «with the transport the file gives it», and
+  // the loop below it only ever re-checked the NAME. Reporting everything as
+  // stdio survived all 161 tests — an invented transport is as bad as an
+  // invented server, and the ladder's «already reachable?» rung reads it.
+  const root = tmp();
+  const project = path.join(root, 'project');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(project, '.mcp.json'), JSON.stringify({
+    mcpServers: {
+      byStdio: { command: 'node', args: ['a.mjs'] },
+      byHttp: { type: 'http', url: 'https://example.invalid/mcp' },
+      bySse: { type: 'sse', url: 'https://example.invalid/sse' },
+    },
+  }));
+  const got = inventory(project, home);
+  const wrong = [];
+  for (const [name, want] of [['byStdio', 'stdio'], ['byHttp', 'http'], ['bySse', 'sse']]) {
+    const s = got.servers.find((x) => x.name === name);
+    if (!s) { wrong.push(`${name}: not reported at all`); continue; }
+    if (!String(s.transport ?? s.type ?? '').includes(want)) {
+      wrong.push(`${name}: reported transport «${s.transport ?? s.type}», the file says «${want}»`);
+    }
+  }
+  assert.deepEqual(wrong, [], `tools.mjs invents transports:\n  ${wrong.join('\n  ')}`);
 });

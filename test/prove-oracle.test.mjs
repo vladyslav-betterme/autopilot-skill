@@ -192,3 +192,35 @@ test('and it does not refuse everything to get there', () => {
   assert.equal(v.refused, false);
   assert.equal(v.status, 1);
 });
+
+test('every construct the analyser exists to refuse is refused', () => {
+  /**
+   * The corpus above compares `prove` against a ground truth — and a ground
+   * truth cannot judge what it cannot see. `bash -e -o pipefail -c 'cat <(FAIL)'`
+   * exits 0, because `cat` succeeded: the substitution's failure is invisible to
+   * the shell, which is exactly WHY the analyser refuses the construct. So 19 of
+   * the corpus rows have truth 0, the property cannot fire on them, and deleting
+   * the process-substitution clause survived all 161 tests while `prove` recorded
+   * «→ 0» for a check that printed five type errors and exited 1.
+   *
+   * A refusal is not a comparison. Assert it directly, one row per clause.
+   */
+  const REFUSED = [
+    ['process substitution', 'cat <(node -e "process.exit(1)")'],
+    ['command substitution', 'echo checked $(node -e "process.exit(1)")'],
+    ['backtick substitution', 'echo checked `node -e "process.exit(1)"`'],
+    ['a pipe', 'node -e "process.exit(1)" | tail -1'],
+    ['a semicolon', 'node -e "process.exit(1)" ; true'],
+    ['|| true', 'node -e "process.exit(1)" || true'],
+    ['|| exit 0', 'node -e "process.exit(1)" || exit 0'],
+    ['a newline', 'node -e "process.exit(1)"\ntrue'],
+    ['background', 'node -e "process.exit(1)" &'],
+  ];
+  const admitted = [];
+  for (const [name, script] of REFUSED) {
+    const r = spawnSync('node', [path.join(SCRIPTS, 'prove.mjs'), '--', 'bash', '-c', script],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], cwd: fs.mkdtempSync(path.join(os.tmpdir(), 'prove-refuse-')) });
+    if (r.status !== 2) admitted.push(`${name}: exit ${r.status} — it RAN the check instead of refusing «${script.replace(/\n/g, '\\n')}»`);
+  }
+  assert.deepEqual(admitted, [], `the analyser admitted a shape it exists to refuse:\n  ${admitted.join('\n  ')}`);
+});

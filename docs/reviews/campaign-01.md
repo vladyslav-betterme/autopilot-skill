@@ -591,6 +591,49 @@ skill says as much («survivable only if the ledger genuinely carries the
 campaign — which is a testable claim, not a hope»), and the cold-start drills are
 that test.
 
+
+### The second half of round 8: eight mutations that survived everything
+
+A mutation tester deleted one clause at a time from every guard and ran the
+suite. **Eight survived all 161 tests** — three of them money, three of them the
+round-1 false-absence fatal reintroduced for free, one of them the lie this
+repository exists to prevent. Every one now has a guard, watched failing against
+its own mutation before it was accepted:
+
+| mutation | guard added |
+|---|---|
+| `prove`'s `<(…)` clause deleted → `→ 0` recorded for a check that exited 1 | nine constructs asserted REFUSED, one row each — a refusal is not a comparison, and the ground truth cannot judge a construct whose defect is that the shell does not see it |
+| `StartInterval` in minutes → 2880 paid invocations a day instead of 48 | the launchd interval compared against the period asked for, in seconds, for five periods |
+| `RunAtLoad` true → an unapproved invocation at every login | asserted false in the same test |
+| the Cursor / Gemini-user / `~/.claude.json` local-scope readers dropped | three new layouts in `tools-oracle` |
+| every transport reported as `stdio` | the transport asserted against what the file declares |
+| `launchctl bootstrap` misspelled → the arming instruction does not run | every printed `launchctl`/`crontab`/`plutil` line has its binary and its subcommand checked against that binary's own help |
+
+### …and the critic's four, against the lock the same round had just repaired
+
+| # | finding | status |
+|---|---|---|
+| F1/F2 | The emitted wrapper still carried round 7's two-syscall reclaim and an unconditional release trap: **20 of 20 trials overlapping at eight racers**, 44 agent runs where 8 was correct, and a carrier tick's trap deleting a running loop's lock (3 of 3 runs, two paid agents) | **fixed** — the wrapper got the same three defences as the library, and the contention case is now a test |
+| F3/F4 | `mkdir` then the pid write is two syscalls: a competitor's reclaim in between threw ENOENT **out of `takeLock`** into a `loop.mjs` that does not catch it, and its put-back restored a directory with NO pid file — a lock every later run refuses **forever**, which is a daemon reporting success and never invoking the agent (4 in 30 trials) | **fixed at the source** — the lock is built complete in a staging directory and moved into place in ONE `rename`, so it is never observable without its pid; an empty directory is now recognised as residue and recovered |
+| F5/F6 | `ps` and `sleep` are external commands and the plist bakes PATH at emit time: without `ps` the wrapper stole a live root-owned lock; without `sleep` its claim check collapsed | **fixed** — both are required up front, and their absence is a refusal written to the carrier log |
+| F7 | A failed put-back orphaned `.stale-*` directories forever — 36 in one run, and nothing cleans them | **fixed**, plus a `.gitignore` glob: an autopilot running `git add -A` could commit a lock |
+
+**What the critic could not break, after 145 trials at 2/8/32/64 racers under
+load average 15–90:** the library's mutual exclusion. Zero overlapping trials,
+and zero in 66 end-to-end runs of a real loop against a real carrier tick at
+eleven arrival offsets.
+
+**And the finding that lands on this campaign's own instrument:** the lock oracle
+counted WINNERS over a trial, not overlapping intervals — so a legitimate
+handover (the previous holder had exited) was reported as «2 processes held the
+lock at once». It was red 2 runs in 11 against correct code, and the «three to
+six simultaneous holders» that motivated round 8's first repair was inflated by
+it; the true figure for that defect was worst 3 at 15 %. **The defect was real
+and the fix was right; the number was the instrument's.** It now measures
+intervals. A flaky guard in a repo whose thesis is «a check that can lie is worse
+than none» corrupts every other verdict the suite gives — a reviewer's own
+mutation run read a flake as «the suite caught it» and had to be corrected.
+
 ## What none of it covers
 
 - Windows. No reviewer had a host; `path.join` backslashes in `args`, and the

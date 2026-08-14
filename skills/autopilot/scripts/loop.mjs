@@ -333,6 +333,15 @@ async function run() {
     clearInterval(beat);
     if (killer) clearTimeout(killer);
     if (escalation) clearTimeout(escalation);
+    /**
+     * The escalation is armed on the GROUP, and it was cleared the moment the
+     * DIRECT child exited — so an agent that backgrounds a worker, dies politely
+     * on SIGTERM and leaves that worker running was reported as killed while it
+     * kept going. «A backgrounded command» is the exact shape the sub-second
+     * stopping condition exists to catch, so it is not an exotic input. If this
+     * iteration was killed for time, the whole group goes with it, now.
+     */
+    if (timedOut) { try { process.kill(-mine.pid, 'SIGKILL'); } catch { /* nothing left */ } }
     child = null;
     const seconds = Math.round((Date.now() - t0) / 1000);
     const after = sig();

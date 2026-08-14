@@ -296,7 +296,9 @@ believing a percentage — this file carried «58–68 % of all findings» until
 honesty auditor looked for the measurement and found none. What IS in the record
 (`docs/reviews/campaign-01.md`, round table): of the FATALS found in each round
 that re-reviewed a previous round's repairs, the share that lived inside those
-repairs was **4 of 4, then 2 of 5, then 8 of 9, then 6 of 14**. Your own number
+repairs was **4 of 4, then 2 of 5, then 7 of 9** (`docs/goal.md`'s round table; round
+5's split is recorded two different ways and is deliberately left out of this
+list rather than quoted from the version that suits the point). Your own number
 will differ; that it is large is the part that keeps being true. You cannot see
 them, because writing them is what ruled out seeing them.
 
@@ -434,15 +436,18 @@ node <skill>/scripts/loop.mjs --status      # what the last runs actually did
 ```
 
 **`loop.mjs` is the loop as a process** — it iterates in front of you until the
-ledger says stop, not until your patience does. **Five** stopping conditions,
+ledger says stop, not until your patience does. **Six** stopping conditions,
 each written into `agent-logs/loop.jsonl` with its reason: a `STOP` file,
 `--max` (the default is 25, never «forever»), **thrash** — `--thrash` iterations
 in a row with no commit and no ledger change, which is §7 made mechanical — an
-agent that exits non-zero that many times running, and **five iterations that
-each returned in under a second**, which is not work: it is a backgrounded
-command or one that exits immediately. (This list said «four» while the fifth
-was in the code, and an auditor reproduced it in nine seconds. An enumeration is
-a claim of exhaustiveness — count it against the source before you write it.)
+agent that exits non-zero that many times running, **five iterations that
+each returned in under a second** — which is not work, it is a backgrounded
+command or one that exits immediately — and a **signal**: SIGINT/SIGTERM/SIGHUP
+stop the run after the current iteration, twice to stop now. (This list said
+«four» when the code had six, and two successive reviewers each corrected it to
+a different wrong number. An enumeration is a claim of exhaustiveness: count it
+against the source — `grep -oE "stopped: [^,}]+" loop.mjs | sort -u` — before
+you write it.)
 It refuses to start at all without a `goal.md`, because a loop whose stopping
 condition is not written down is a `while true` with a nicer name.
 
@@ -558,7 +563,7 @@ all about ARTIFACTS, all checkable by someone who did not do the work:
    a sequence that agreed with the counter on no round at all, whose
    load-bearing **0** was a round that in fact produced four rows. An honesty
    auditor ran the command and returned the real series. What is true:
-   **this campaign has run eight rounds and not one of them was zero.** The rule
+   **this campaign has run eight rounds and the counter has never returned a zero one** (round 4's rows carry round 5's tags, where the fixes landed, so the command shows seven tags for eight rounds — that too is worth checking rather than believing). The rule
    is still better than the «no fatal in the same area twice» it replaced, for a
    reason that needs no invented number — it is counted by a command rather than
    argued, and a round that finds plenty still satisfies it as long as every

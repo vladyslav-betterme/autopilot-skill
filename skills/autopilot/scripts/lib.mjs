@@ -245,10 +245,29 @@ const CLAIM_SETTLE_MS = 50;
 export function takeLock(dir) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let created = false;
+    /**
+     * Build the lock COMPLETE — pid inside — and move it into place in ONE
+     * step. `mkdir` then `writeFile` is two syscalls, and a competitor's
+     * reclaim landing between them made the pid write throw ENOENT straight
+     * out of this function (`loop.mjs` does not catch it), while the
+     * competitor's put-back restored a directory with NO pid file: a lock both
+     * copies then refuse forever, which is a daemon reporting success every
+     * interval and never invoking the agent. Measured 4 times in 30 trials at
+     * eight racers.
+     *
+     * `rename` onto a non-empty directory fails, so a live lock is never
+     * replaced; onto an EMPTY one it succeeds, which recovers exactly the
+     * residue an older version could leave.
+     */
+    let staging = null;
     try {
-      fs.mkdirSync(dir);
+      staging = fs.mkdtempSync(`${dir}.new-`);
+      fs.writeFileSync(path.join(staging, 'pid'), String(process.pid));
+      fs.renameSync(staging, dir);
+      staging = null;
       created = true;
     } catch {
+      if (staging) { try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* leaked, not fatal */ } }
       const pid = pidIn(dir);
       if (!pid) return false;              // mid-creation, or an empty pid: fail CLOSED
       if (holderLives(pid)) return false;  // a real holder, possibly another user's
@@ -265,14 +284,20 @@ export function takeLock(dir) {
       try { fs.renameSync(dir, aside); } catch { continue; }
       const moved = pidIn(aside);
       if (moved !== pid || holderLives(moved)) {
-        try { fs.renameSync(aside, dir); } catch { /* somebody took the name; it is theirs */ }
+        try {
+          fs.renameSync(aside, dir);
+        } catch {
+          // Somebody took the name while we held their lock aside — the path is
+          // theirs now, and keeping the aside only leaks a directory nothing
+          // will ever read (29 trials in 40 left one, 36 orphans in one run).
+          try { fs.rmSync(aside, { recursive: true, force: true }); } catch { /* nothing else to try */ }
+        }
         continue;
       }
       try { fs.rmSync(aside, { recursive: true, force: true }); } catch { /* it is out of the way */ }
       continue;
     }
     if (created) {
-      fs.writeFileSync(path.join(dir, 'pid'), String(process.pid));
       /**
        * THE CLAIM IS NOT THE DIRECTORY, IT IS THE PID FILE.
        *

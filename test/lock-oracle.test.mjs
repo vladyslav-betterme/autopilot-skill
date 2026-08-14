@@ -39,16 +39,24 @@ function deadPid() {
   return r.pid;
 }
 
-/** One racer: take the lock, and if it wins, announce it in its own file. */
+/** One racer: take the lock, and if it wins, record WHEN it held it.
+ *
+ *  The first version of this counted files: one per winner, over a 120 ms hold.
+ *  That is not simultaneity. A racer that reclaims a genuinely stale lock after
+ *  the previous holder EXITED is a legitimate handover, and it added a second
+ *  file — so the oracle reported «2 processes held the lock at once» against a
+ *  lock with zero temporal overlap, was red 2 runs in 11 on correct code, and
+ *  inflated the number that motivated a fix. The property is an INTERVAL
+ *  property; measure intervals. */
 const RACER = (lib) => `
-import { takeLock } from ${JSON.stringify(lib)};
+import { takeLock, releaseLock } from ${JSON.stringify(lib)};
 import fs from 'node:fs';
 const [dir, holders] = process.argv.slice(2);
 if (takeLock(dir)) {
-  fs.writeFileSync(holders + '/' + process.pid, '');
-  // Hold it long enough that a legitimate handover cannot be mistaken for an
-  // overlap: nobody releases here, so two files means two simultaneous holders.
+  const from = Date.now();
   await new Promise((r) => setTimeout(r, 120));
+  fs.writeFileSync(holders + '/' + process.pid, from + ' ' + Date.now());
+  releaseLock(dir);
 }
 `;
 
@@ -72,8 +80,14 @@ test('a stale lock is reclaimed by exactly one racer, never two', async () => {
       c.on('close', done);
     })));
 
-    const won = fs.readdirSync(holders);
-    if (won.length !== 1) overlaps.push(`trial ${t}: ${won.length} processes held the lock at once`);
+    // Sweep the timeline: how many holders were inside their hold AT ONCE?
+    const events = fs.readdirSync(holders)
+      .map((f) => fs.readFileSync(path.join(holders, f), 'utf8').split(' ').map(Number))
+      .flatMap(([from, to]) => [[from, 1], [to, -1]])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let live = 0, peak = 0;
+    for (const [, delta] of events) { live += delta; peak = Math.max(peak, live); }
+    if (peak > 1) overlaps.push(`trial ${t}: ${peak} processes held the lock AT ONCE (${events.length / 2} winners over the trial)`);
   }
   assert.deepEqual(overlaps, [],
     `${RACERS} racers against a stale lock, ${TRIALS} trials — the lock is not mutually exclusive:\n  ${overlaps.join('\n  ')}`);
@@ -101,14 +115,63 @@ test('releasing a lock somebody else now holds is refused', async () => {
   assert.equal(fs.existsSync(lock), false);
 });
 
-test('a lock whose pid file has not been written yet is not stolen', async () => {
-  // The window between `mkdir` and the `pid` write. Failing CLOSED here costs
-  // one skipped iteration; failing open costs two agents.
-  const dir = tmp();
-  const lock = path.join(dir, '.autopilot.lock');
-  fs.mkdirSync(lock);
+test('an EMPTY pid file is never «gone»; an EMPTY lock directory is not a life sentence', async () => {
+  /**
+   * These two states look alike and mean opposite things, and this test used to
+   * assert the second one WRONGLY — pinning the defect in place.
+   *
+   * A lock is now built complete and moved into place in one `rename`, so it is
+   * never observable without its pid. Therefore a lock DIRECTORY with no pid
+   * file cannot be a taker mid-creation: it is residue from a crash or an older
+   * version, and refusing it forever is «a daemon that reports success every
+   * interval and never invokes the agent» — the exact failure the lock's own
+   * comment warns about. `rename` onto an empty directory succeeds, so that
+   * residue is recovered, and onto a non-empty one it fails, so a live lock is
+   * never replaced.
+   *
+   * A pid FILE that is empty or unreadable is a different animal: the directory
+   * is not empty, somebody wrote it, and we cannot say who. Fail CLOSED there —
+   * one skipped iteration costs nothing, two agents cost money.
+   */
   const { takeLock } = await import(LIB);
-  assert.equal(takeLock(lock), false);
-  fs.writeFileSync(path.join(lock, 'pid'), '');
-  assert.equal(takeLock(lock), false, 'an empty pid read as «gone»');
+
+  const a = path.join(tmp(), '.autopilot.lock');
+  fs.mkdirSync(a);
+  fs.writeFileSync(path.join(a, 'pid'), '');
+  assert.equal(takeLock(a), false, 'an empty pid read as «gone»');
+
+  const b = path.join(tmp(), '.autopilot.lock');
+  fs.mkdirSync(b);                                    // residue: no pid file at all
+  assert.equal(takeLock(b), true, 'a pidless lock directory is unreclaimable — the loop can never run again');
+  assert.equal(Number(fs.readFileSync(path.join(b, 'pid'), 'utf8')), process.pid);
+});
+
+test('under contention it returns a boolean — it does not throw into the caller', async () => {
+  // `loop.mjs:161` is `if (!takeLock(lock))` with no try. A competitor's reclaim
+  // landing between `mkdir` and the pid write threw ENOENT (and EINVAL) out of
+  // takeLock six times in 40 trials, so the loop died on a stack trace instead
+  // of printing «another iteration is running».
+  const root = tmp();
+  const racer = path.join(root, 'racer.mjs');
+  fs.writeFileSync(racer, `
+import { takeLock } from ${JSON.stringify(LIB)};
+const [dir] = process.argv.slice(2);
+const held = takeLock(dir);
+if (typeof held !== 'boolean') { console.error('NOT A BOOLEAN: ' + String(held)); process.exit(9); }
+`);
+  const threw = [];
+  for (let t = 0; t < 6; t++) {
+    const dir = path.join(root, `t-${t}`);
+    const lock = path.join(dir, '.autopilot.lock');
+    fs.mkdirSync(lock, { recursive: true });
+    fs.writeFileSync(path.join(lock, 'pid'), String(deadPid()));
+    const results = await Promise.all(Array.from({ length: 8 }, () => new Promise((done) => {
+      const c = spawn(process.execPath, [racer, lock], { stdio: ['ignore', 'ignore', 'pipe'] });
+      let err = '';
+      c.stderr.on('data', (d) => { err += d; });
+      c.on('close', (code) => done({ code, err }));
+    })));
+    for (const r of results) if (r.code !== 0) threw.push(`trial ${t}: exit ${r.code} — ${r.err.split('\n')[0]}`);
+  }
+  assert.deepEqual(threw, [], `takeLock threw into its caller:\n  ${threw.join('\n  ')}`);
 });
