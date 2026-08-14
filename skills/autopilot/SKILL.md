@@ -287,7 +287,14 @@ writing them is what ruled out seeing them.
   (convergence analyst, honesty auditor) that return the most.
 - **After fixing what review found, review again** — the fixes are where the
   self-inflicted defects live. **One round plus one re-review is the budget.** A
-  third round means the change was too big: split it.
+  third round means the change was too big: split it. (This skill's own campaign
+  earned a third round, in three areas at once. The rule is not decoration.)
+- **Re-run the reviewer's OWN reproduction, verbatim, after the fix.** Not your
+  version of it, and not the test you wrote for it: a fix that reads correctly
+  can be completely inert. One here compared a directory against `$HOME` to stop
+  a walk-up escaping into the owner's files — and `/var` is a symlink to
+  `/private/var`, so the comparison never matched and the personal file was
+  still written to. The test passed. The reviewer's four-line repro did not.
 - **No subagent available?** Then say so and stop at that criterion. A second
   pass by the same context is not verification, and calling it one is the whole
   failure this section exists for.
