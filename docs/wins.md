@@ -6,6 +6,11 @@ it is a pattern you would repeat on a different task.
 **At three, it graduates into a skill of its own** — write it with
 `scripts/new-skill.mjs` and use it immediately. The count is the mechanism.
 
+One class is exempt, and the exemption is recorded in `decisions.md`: a pattern
+whose subject is THIS loop's own doctrine belongs in the SKILL section that owns
+that step, not in a second skill beside it. The test is whether the pattern
+would help someone who is not running this loop.
+
 | pattern | times | last seen | evidence it worked |
 |---|---:|---|---|
 | **Execute the artifact you emitted, never review it.** A generated file is not a claim about behaviour until something runs it. | 3 | 2026-08-13 | (1) the scaffolded MCP server driven through a real `initialize`/`tools/list`/`tools/call` handshake — reading it would not have shown that a notification must get no reply; (2) the carrier wrapper run under `/bin/sh`, which is the ONLY reason the `&&` short-circuit was found; (3) the emitted plist actually `launchctl bootstrap`ed and kickstarted — `plutil -lint` was green on it either way. |

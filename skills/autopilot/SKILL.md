@@ -205,6 +205,15 @@ the one that took longest to learn.
 symptom the request names: find every other place with the same shape first, and
 fix it where they all pass through.
 
+**When a guard normalises and then decides, delete the pipeline.** Whatever
+normalises is where the next defect lives, because it looks like plumbing and
+nobody reviews plumbing. This skill learned it three times, and all three diffs
+were SHORTER than what they replaced: a check and a write that each computed
+their own path became one derived path; three `String.replace` stages in front
+of a whitelist became one scanner that tracks quote state; two functions
+answering «where does the state live» became one. The tell is that a fix keeps
+being correct and the next round keeps finding the stage before it.
+
 **Prove.** Run the discovered check, **in the foreground, reading the exit code
 in the shell that ran it** — or, better, let something that is not writing the
 summary read it for you:

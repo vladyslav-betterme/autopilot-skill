@@ -150,3 +150,4 @@ guard is a new row.
 - **prove** `npm run verify` → 0, 0 (2 runs) — carrier oracles: YAML parsed, schedule expanded · 2026-08-14T10:19:12Z
 - **prove** `npm run verify` → 0 — round 5 in the ledger · 2026-08-14T10:20:34Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — all six guards have oracles · 2026-08-14T11:08:09Z
+- **prove** `npm run verify` → 0 — the three-at-three patterns, resolved · 2026-08-14T11:10:22Z
