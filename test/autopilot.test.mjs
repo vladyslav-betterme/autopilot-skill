@@ -845,6 +845,51 @@ test('a server map that is an array or a string is refused, not «registered»',
   }
 });
 
+test('two processes scaffolding into an EMPTY project keep both registrations', () => {
+  // The lock serialised them and a registration was still lost 7 races in 10:
+  // `configExists` was a snapshot taken BEFORE the lock and it gated the
+  // re-read, so a racer that started in an empty project wrote {} over what the
+  // first holder had just created — both printing «registered», both exit 0.
+  for (let i = 0; i < 3; i++) {
+    const d = tmp();
+    const spawn = (n) => execFileSync('node', [path.join(SCRIPTS, 'new-mcp.mjs'), n, '-d', `drives ${n}, a server scaffolded by one of two racing agents`],
+      { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // Serialised through the lock either way; the point is what the LOSER does.
+    spawn('alpha'); spawn('bravo');
+    const keys = Object.keys(JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8')).mcpServers);
+    assert.deepEqual(keys.sort(), ['alpha', 'bravo'], `race ${i} lost a registration`);
+  }
+});
+
+test('a lock held by someone else leaves NOTHING behind, so the retry is a retry', () => {
+  // Every die() between «scaffold written» and «config written» used to leave
+  // the scaffold, and the retry then said «already exists — not overwriting»:
+  // the only way forward was deleting a file you were just told never to
+  // overwrite. The lock is taken before anything is read or written now.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.mcp-lock'));
+  const desc = 'drives the demo thing, a description long enough to pass';
+  assert.throws(() => run('new-mcp.mjs', d, ['demo', '-d', desc]), /another process is holding/);
+  assert.equal(fs.existsSync(path.join(d, 'tools')), false, 'a scaffold survived a refusal');
+  fs.rmdirSync(path.join(d, '.mcp-lock'));
+  run('new-mcp.mjs', d, ['demo', '-d', desc]);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8')).mcpServers.demo);
+});
+
+test('a TOP-LEVEL array or string config is refused too', () => {
+  // The shape helper was asked about config[key] and never about config itself,
+  // so the same two shapes its own comment names went through one level up: an
+  // array printed «registered» and exited 0 while JSON.stringify dropped the
+  // property; a string threw and left a scaffold.
+  for (const body of ['["legacy-entry","another"]', '"see ./servers.d"', '42']) {
+    const d = tmp();
+    fs.writeFileSync(path.join(d, '.mcp.json'), body);
+    assert.throws(() => run('new-mcp.mjs', d, ['demo', '-d', 'drives the demo thing, a description long enough']), /not an object/, body);
+    assert.equal(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8'), body, 'their config changed');
+    assert.equal(fs.existsSync(path.join(d, 'tools')), false, 'a scaffold was left behind');
+  }
+});
+
 test('a hardlinked config is refused — realpath cannot see a second name', () => {
   const d = tmp();
   const outside = path.join(tmp(), 'important.json');
@@ -996,6 +1041,60 @@ test('the carrier honours a STOP found by the WALK, not one relative to cwd', ()
   const wrapper = carrierWrapper(sub, ['--agent', `echo ran >> ${JSON.stringify(path.join(d, 'ran.txt'))}`]);
   execFileSync('/bin/sh', ['-c', wrapper], { cwd: sub });
   assert.equal(fs.existsSync(path.join(d, 'ran.txt')), false, 'the carrier ran with a STOP two levels up');
+});
+
+test('the GitHub carrier honours the same STOP set as the loop', () => {
+  // It ignored stopPaths entirely and baked ONE relative path. With STOP at the
+  // project root — where SKILL.md says it may go — the step reported
+  // halted=false and the agent ran, every 30 minutes, forever, under a banner
+  // saying the set was the same. Every carrier test hardcoded --kind launchd,
+  // so the GitHub emitter had zero STOP coverage.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'docs'));
+  run('bootstrap.mjs', d);
+  fs.writeFileSync(path.join(d, 'STOP'), 'halt\n');
+  const wf = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'echo AGENT-RAN', '--kind', 'github'],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  // The WHOLE run block, run as the step would: the first filter dropped the
+  // loop's `done` line and handed sh an unterminated `for` — a test that failed
+  // for its own reason instead of the code's.
+  const lines = wf.split('\n');
+  const from = lines.findIndex((l) => l.includes('halted=false'));
+  const to = lines.findIndex((l) => l.includes('echo "halted='));
+  const step = lines.slice(from, to + 1).join('\n').replace(/>> "\$GITHUB_OUTPUT"/, '');
+  const out = execFileSync('/bin/sh', ['-c', `${step}\necho RESULT=$halted`], { cwd: d, encoding: 'utf8' });
+  assert.match(out, /RESULT=true/, `the GitHub carrier would have run the agent:\n${step}`);
+});
+
+test('the agent command survives YAML — a hash is not a comment here', () => {
+  // `run: ${agent}` as a plain scalar let « #» truncate it silently: a nightly
+  // cap dropped, «fix issue #42» cut at the hash, a colon-space breaking the file.
+  const wf = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'claude -p continue --max-turns 20 # nightly cap', '--kind', 'github'],
+    { cwd: tmp(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  assert.match(wf, /run: \|\n\s+claude -p continue --max-turns 20 # nightly cap/);
+});
+
+test('cron refuses a period it cannot express, instead of firing more often', () => {
+  // `*/45` means «every minute divisible by 45»: :00 and :45, so 45 minutes then
+  // 15, and 48 paid runs a day where 32 were asked for — under a header saying
+  // «every 45 min».
+  const d = tmp();
+  const emit = (every) => execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'cron', '--every', every],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  for (const bad of ['45m', '59m', '25m', '90m', '7h']) {
+    assert.throws(() => emit(bad), /cron (cannot fire|has no)/, bad);
+  }
+  for (const good of ['30m', '20m', '2h', '6h']) assert.doesNotThrow(() => emit(good), good);
+});
+
+test('a percent in the path or the prompt does not truncate the cron command', () => {
+  // cron turns an unescaped % into a newline and sends the rest to stdin: the
+  // command was cut mid-quote, taking the log redirect with it, so it failed
+  // every interval into a log file that was therefore never created.
+  const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', "claude -p 'reach 100% coverage'", '--kind', 'cron'],
+    { cwd: tmp(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  assert.match(out, /100\\% coverage/);
+  assert.doesNotMatch(out, /[^\\]100% coverage/);
 });
 
 test('an hourly interval is an hourly cron, not one that fires every minute', () => {

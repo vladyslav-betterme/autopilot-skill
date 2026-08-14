@@ -95,3 +95,6 @@ fatal or major finding in the same area two rounds running.
   clean project, then all ten documented commands, ten for ten. Nobody had run
   the path the README's first line describes.
 - **prove** `npm run verify` → 0, 0 (2 runs) — R4 prove: quoting scanned, -c located · 2026-08-14T08:52:02Z
+- **prove** `npm run verify` → 0 — R4 new-mcp: lock first, top-level shape · 2026-08-14T08:54:56Z
+- **prove** `npm run verify` → 1 — R4 carrier: github STOP, cron divisors, %, YAML · 2026-08-14T08:56:51Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R4 carrier pinned · 2026-08-14T08:57:54Z

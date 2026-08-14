@@ -111,6 +111,33 @@ for (const [label, rel] of [['--dir', dirAbs], ['--config', configAbs]]) {
  * comments and an `inputs` block, so «registered» could mean «your entire MCP
  * config is gone», exit 0.
  */
+/**
+ * The lock comes FIRST — before the config is read and before anything is
+ * written. Two things went wrong when it did not:
+ *
+ *  · `configExists` was a snapshot taken BEFORE the lock, and it gated the
+ *    re-read. A racer that started in an empty project therefore skipped the
+ *    re-read and wrote `{}` over whatever the first holder had just created:
+ *    7 races of 10 lost a registration while BOTH processes printed
+ *    «registered» and exited 0 — on the path this script is FOR, scaffolding
+ *    the first server in a project.
+ *  · every `die()` between «scaffold written» and «config written» left the
+ *    scaffold, so the retry said «already exists — not overwriting». Taking the
+ *    lock here means every refusal happens before anything exists.
+ */
+const lockDir = path.join(root, '.mcp-lock');
+let locked = false;
+for (let i = 0; i < 50 && !locked; i++) {
+  try { fs.mkdirSync(lockDir); locked = true; } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); }
+}
+if (!locked) {
+  die(`another process is holding ${path.relative(root, lockDir)} — if nothing else is running, delete it.\n` +
+    'Nothing was written, so a retry is a retry.');
+}
+const release = () => { try { fs.rmdirSync(lockDir); } catch { /* already gone */ } };
+process.on('exit', release);
+for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => { release(); process.exit(130); });
+
 const configStat = (() => { try { return fs.statSync(configAbs); } catch { return null; } })();
 if (configStat?.isDirectory()) die(`--config «${configRel}» is a directory.`);
 // realpath resolves symlinks; a hardlink has no path to resolve, so the file
@@ -135,6 +162,15 @@ if (configExists) {
 /** The key belongs to the FILE, not to what happens to be in it. Choosing it
  *  from existing content registered a fresh `.vscode/mcp.json` under
  *  `mcpServers` — the one key VS Code does not read. */
+// The helper was asked about `config[key]` and never about `config` itself, so
+// a TOP-LEVEL array printed «registered» and exited 0 while JSON.stringify
+// dropped the property, and a top-level string threw. Both shapes are the ones
+// the helper's own doc comment names — one level up.
+const topProblem = serverMapProblem(config);
+if (topProblem) {
+  die(`${configRel} is ${topProblem}, not an object.\n` +
+    'Refusing: a server added to that either vanishes when it is written back, or throws.');
+}
 const key = /[/\\]?\.vscode[/\\]/.test(configRel) ? 'servers' : (config?.servers ? 'servers' : 'mcpServers');
 const mapProblem = serverMapProblem(config?.[key]);
 if (mapProblem) {
@@ -227,6 +263,9 @@ if (cliMode) {
 // JSON-RPC 2.0, one message per line. A message with no \`id\` is a NOTIFICATION
 // and must get no reply at all — answering \`notifications/initialized\` is the
 // classic way a hand-written server hangs a client at startup.
+// A client that closes stdout raises EPIPE on the write, and an unhandled
+// 'error' event kills the process with a stack nobody is left to read.
+process.stdout.on('error', (err) => { if (err.code === 'EPIPE') process.exit(0); throw err; });
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n');
 const PROTOCOL = '2025-06-18';
 
@@ -279,7 +318,12 @@ if (!cliMode) process.stdin.on('data', (chunk) => {
 });
 `;
 
-fs.mkdirSync(path.join(root, dirRel), { recursive: true });
+try {
+  fs.mkdirSync(dirAbs, { recursive: true });
+} catch (err) {
+  die(`cannot create ${dirRel}: ${err.code ?? err.message}` +
+    (err.code === 'ENOENT' ? ' — a dangling symlink in that path, most likely.' : ''));
+}
 try {
   fs.writeFileSync(serverAbs, TEMPLATE, { flag: 'wx' });
 } catch (err) {
@@ -298,18 +342,8 @@ try {
  * atomic everywhere. ponytail: no staleness timeout; a crash leaves the
  * directory and the message below says to delete it.
  */
-const lockDir = path.join(root, '.mcp-lock');
-let locked = false;
-for (let i = 0; i < 50 && !locked; i++) {
-  try { fs.mkdirSync(lockDir); locked = true; } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); }
-}
-if (!locked) die(`another process is holding ${path.relative(root, lockDir)} — if nothing else is running, delete it.`);
-const release = () => { try { fs.rmdirSync(lockDir); } catch { /* already gone */ } };
-process.on('exit', release);
+const next = config ?? {};
 
-// Re-read under the lock: the copy above was taken before anyone was excluded.
-const fresh = configExists ? (() => { try { return JSON.parse(fs.readFileSync(configAbs, 'utf8')); } catch { return config; } })() : config;
-const next = fresh ?? {};
 next[key] = next[key] ?? {};
 next[key][name] = { type: 'stdio', command: 'node', args: [serverRel] };
 try {

@@ -84,11 +84,41 @@ const logDir = 'agent-logs';
  * sixty times it. (The old expression is not quoted here: it contains the
  * characters that end a block comment, which is its own small lesson.)
  */
-const cronExpr = minutes < 60
-  ? `*/${minutes} * * * *`
-  : minutes % 1440 === 0
-    ? `0 0 */${Math.min(minutes / 1440, 28)} * *`
-    : `0 */${Math.max(1, Math.round(minutes / 60))} * * *`;
+function cronFor(mins) {
+  // `*/N` means «every value of the field divisible by N», not «every N». For a
+  // non-divisor it wraps: `*/45` fires at :00 and :45 — 45 minutes, then 15,
+  // then 45 — 48 paid invocations a day where 32 were asked for, under a header
+  // this script prints saying «every 45 min». `*/59` is worse: :00 and :59, two
+  // invocations sixty seconds apart. cron cannot say what --every means here,
+  // so it says so instead of guessing.
+  const divisors = (n) => Array.from({ length: n }, (_, i) => i + 1).filter((d) => n % d === 0);
+  if (mins < 60) {
+    if (60 % mins) {
+      die(`cron cannot fire every ${mins} minutes: «*/${mins}» means «every minute divisible by ${mins}»,\n` +
+        `which for ${mins} is ${[...Array(Math.ceil(60 / mins)).keys()].map((i) => ':' + String(i * mins).padStart(2, '0')).join(' ')} and then a jump — more runs than you asked for, and unevenly spaced.\n` +
+        `Whole divisors of an hour: ${divisors(60).filter((d) => d < 60).join(', ')} minutes.\n` +
+        (process.platform === 'darwin' ? 'Or use --kind launchd, whose StartInterval is exact.' : 'Or run the loop under a scheduler that takes a period rather than a calendar.'));
+    }
+    return `*/${mins} * * * *`;
+  }
+  if (mins % 60) {
+    die(`cron has no «every ${mins} minutes»: past an hour it can only fire on whole hours.\n` +
+      `Use a whole number of hours (${divisors(24).map((h) => h + 'h').join(', ')}), or --kind launchd for an exact interval.`);
+  }
+  const hours = mins / 60;
+  if (hours < 24) {
+    if (24 % hours) {
+      die(`cron cannot fire every ${hours} hours: «*/${hours}» means «every hour divisible by ${hours}», which wraps at midnight.\n` +
+        `Whole divisors of a day: ${divisors(24).filter((h) => h < 24).map((h) => h + 'h').join(', ')}.`);
+    }
+    return `0 */${hours} * * *`;
+  }
+  if (hours % 24) die(`past a day, use a whole number of days.`);
+  const days = hours / 24;
+  if (days > 28) die('a period longer than 28 days is not expressible in cron — schedule it yourself.');
+  return days === 1 ? '0 0 * * *' : `0 0 */${days} * *`;
+}
+const cronExpr = kind === 'cron' || kind === 'linux' || kind === 'github' ? cronFor(minutes) : '';
 
 /**
  * The wrapper every carrier runs, and the reason this is not just a cron line.
@@ -138,11 +168,18 @@ const LAUNCHD = () => `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>`;
 
+/** cron turns an unescaped `%` into a newline and sends everything after it to
+ *  the command as stdin — so a project path containing «100%» or a prompt
+ *  saying «reach 100% coverage» truncated the command mid-quote, took the log
+ *  redirect with it, and failed every interval into a log file that was
+ *  therefore never created. */
+const cronEscape = (s) => s.replace(/%/g, '\\%');
+
 const CRON = () => `# every ${minutes} min — autopilot carrier for ${root}
 # PATH is set explicitly: cron's is nearly empty, and «command not found» in a
 # job nobody watches looks exactly like «the loop is quietly working».
 PATH=${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}
-${cronExpr} /bin/sh -c '${wrapper.replace(/'/g, `'\\''`)}' >> ${path.join(root, logDir, 'carrier.log')} 2>&1`;
+${cronExpr} /bin/sh -c '${cronEscape(wrapper.replace(/'/g, `'\\''`))}' >> ${cronEscape(path.join(root, logDir, 'carrier.log'))} 2>&1`;
 
 const GITHUB = () => `# The only carrier here that survives the laptop being closed — and the only
 # one that spends somebody's money on a schedule. Every run costs an agent
@@ -170,16 +207,21 @@ jobs:
         # run the next one anyway — the switch was inert. An output plus an if:
         # is what actually skips the agent.
         run: |
-          if [ -e ${JSON.stringify(path.join(path.relative(root, ledgers[0] ?? root) || '.', STOP_FILE))} ]; then
-            echo "halted=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "halted=false" >> "$GITHUB_OUTPUT"
-          fi
+          halted=false
+          for s in ${LEDGER_HOMES.map((h) => JSON.stringify(path.join(h, STOP_FILE))).join(' ')}; do
+            [ -e "$s" ] && halted=true
+          done
+          echo "halted=$halted" >> "$GITHUB_OUTPUT"
       - name: one iteration
         if: steps.stop.outputs.halted != 'true'
         env:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
-        run: ${agent}`;
+        # A block scalar, not a plain one. Interpolated bare, the agent command
+        # was YAML: a hash truncated it silently (--max-turns 20 # nightly cap
+        # ran without the cap), «fix issue #42» lost everything after the hash,
+        # and a colon-space broke the file outright.
+        run: |
+${agent.split('\n').map((l) => '          ' + l).join('\n')}`;
 
 const EMIT = { launchd: LAUNCHD, cron: CRON, linux: CRON, github: GITHUB }[kind];
 if (!EMIT) die(`unknown --kind «${kind}» — launchd, cron or github`);
