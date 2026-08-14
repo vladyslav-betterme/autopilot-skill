@@ -37,6 +37,7 @@ inventing a direction.
 | **The guard is beaten by the layer IN FRONT of it** | 3 | R2, R3, R4 — each round's fix was correct and the stage feeding it was forgeable |
 | **A grammar emitted for an interpreter the check cannot run** | 4 | R3, R4 — cron and YAML; the surface was CUT rather than fixed a fifth time |
 | **Writing the very syntax the comment warns about, into a comment** | 2 | 2026-08-13 and 2026-08-14, same file: a cron step ends a block comment |
+| **A commit whose message describes work the commit does not contain** | 1 | 2026-08-14 — `git add` aborted on a path the rename had already staged, and the commit had only that rename left |
 | **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
 
 ## Patterns
@@ -171,3 +172,16 @@ round lived in the part no interpreter reads. The suite executes the emitted
 expression it shared with GitHub stays, because that is five fields and not a
 command line. **If you cannot run an emitted grammar in your check, that is a
 reason to cut it, not to review it again.**
+
+### A commit whose message describes work the commit does not contain
+
+`git add a b c` **aborts entirely** when one path does not exist — and the path
+that did not exist was the pre-rename name of a file `git mv` had already
+staged. Nothing else got added. `git commit` then had exactly the rename to
+commit, and took a message describing a third oracle, a unified taxonomy and
+six ledger repairs. It was pushed that way.
+
+**The tell:** you passed several paths to `git add` and did not read what it
+printed, or `git status` after it. The campaign's own rule — «check that the
+thing actually landed» — is usually read as being about deploys. It is about
+commits too: `git show --stat` against the message is four seconds.
