@@ -364,6 +364,73 @@ Ten for ten. It is «execute the artifact you emitted» applied to the repositor
 as a product rather than to one file — and the first time this campaign checked
 that what it publishes is what it tests.
 
+## Cold-start drill 4 (08-14) — against the current ledger, after round 6
+
+A fresh subagent, restricted to `docs/*.md` and `docs/reviews/campaign-01.md`
+only — no source, no `SKILL.md`, no git log — asked whether a fresh session
+could both resume the work and CLOSE it from the ledger alone. Verdict, pasted
+verbatim:
+
+---
+
+# Cold-start drill — verdict
+
+## 1. Verdict: **NO**
+
+## 2. Reasoning for RESUME
+
+Unambiguous. `STEERING.md` gives an ordered "take ONE and finish it" list, and item 1 is not close: **dispatch a fresh read-only agent, given only `docs/**`, to answer whether a fresh session can resume and close the work; paste its verdict verbatim into `docs/reviews/`; mark criterion 4 met only if the verdict is YES.** That is exactly this task — this session *is* that drill. `goal.md` criterion 4 states the same procedure independently ("dispatch a fresh read-only drill, paste its verdict verbatim into `docs/reviews/`, and mark this met only if it answered YES… A drill run by the party it audits does not count"). So the next action is knowable with certainty, and it is the one currently executing.
+
+If for some reason a subagent could not be dispatched, `STEERING.md` also names the fallback unambiguously: bring `docs/changelog.md` current (item 2), which is independently verifiable as stale (it stops at "I13" while `goal.md`'s iteration log runs through round 4/5/6 fixes with SHAs after that point).
+
+So RESUME is answerable cleanly. The problem is entirely on the CLOSE side.
+
+## 3. Reasoning for CLOSE
+
+Walking `goal.md`'s done-criteria table:
+
+- **#1 "The three §7 conditions hold" — partly.** The evidence cell's arithmetic doesn't match the table it sits above (see Finding 1). Separately, the mechanism it depends on — "two consecutive rounds add zero new rows to `failures.md`" — cannot be independently recomputed from `failures.md` as written (Finding 4), and there is no scheduled path in `STEERING.md` for how this criterion ever reaches "yes" (Finding 5). Not closable from the ledger alone.
+- **#2 "The loop survives the session" — yes.** Evidence is a narrative claim (launchd bootstrap/kickstart, STOP from a subdirectory, "7 tests") without a reproduction command, unlike most other cells in this same ledger. Weaker than the campaign's own stated standard ("every finding carries the command that reproduces it") but not contradicted by anything else I read — I'd call this "believable, not provably closed."
+- **#3 "Evidence step is mechanical" — yes.** Well evidenced: concrete reproducible commands (`false | tail` → 0 vs `prove -- false` → 1), specific counts (12 tests). Sufficient to believe without re-deriving.
+- **#4 "The ledger is provably resumable" — partly.** Directly contradicted between `STEERING.md` and `goal.md` on what "drill 3" even is or whether it happened (Finding 2). `campaign-01.md` — the file both cite as evidence — doesn't contain a "Cold-start drill 3" section at all.
+- **#5 "Verification is not self-service" — yes**, on the part covered by `campaign-01.md` § Round 2 (five concrete invocations, three missed by same-model review — fully reproducible). The cell also cites "doctrine in `references/critics.md`," which is outside the docs/ ledger and unverifiable under the drill's own rules (minor, Finding 8).
+- **#6 "MCP server cost is measured or the choice is recorded" — yes.** Cleanly matches `decisions.md` verbatim, including the fact that a landed test refuses the `--cost` flag. This one is genuinely closable from the ledger alone.
+
+So: two criteria (#3, #6) are solidly closable from the ledger; one (#2) is plausible but thinly evidenced; three (#1, #4, and the cross-cutting §7 mechanism) contain actual contradictions or unrecoverable ambiguity that a fresh session cannot resolve without going outside the ledger (or without guessing).
+
+## 4. Specific findings
+
+1. **`goal.md`'s own guard count is stale — "6" vs. the 7 rows actually in its table.** The text directly above the guard table says *"«1 guard of ~6» was not computable, because nobody had listed the six"*, and criterion 1's evidence cell says *"**6 guards of 6** have oracles"* (`docs/goal.md` lines 42, 59). But the table itself (lines 47–53) lists **seven** rows with oracles: `prove`, `new-mcp`, "the ledger: election vs search", `tools.mjs`, `loop` thrash detection, "every script's printed instructions", and "carrier schedule expression". `campaign-01.md`'s own Round 6 section calls the printed-instructions test **"a seventh oracle"** twice. The iteration log even shows the moment the number changed and was never reconciled in the prose: `"all six guards have oracles · 2026-08-14T11:08:09Z"` (line 154) is followed later by `"R6: printed instructions oracle · 2026-08-14T11:30:19Z"` (line 159) — a guard added *after* the "six" count was written, with the surrounding prose never updated. This is the exact class of bug the campaign says it fixed at Round 6 ("the numbers that rot now carry the command instead") — and it rotted anyway, in the most load-bearing sentence in the file.
+
+2. **Contradiction about "drill 3" between `STEERING.md` and `goal.md`, and a dangling reference to a section that doesn't exist.** `STEERING.md` line 18 says *"Drills 1 and 2 said «start but not close»; **drill 3's fourteen findings are fixed**."* `goal.md` line 62 says *"drills 1 and 2 both «start but not close», **14 findings between them, all fixed. Drill 3 is running** against this version"*. These disagree on (a) whether the 14 findings belong to drill 3 or to drills 1+2 combined, and (b) whether drill 3 is finished or still in progress. Neither claim is checkable: `campaign-01.md`, which both cite (`§§ Cold-start drill, Cold-start drill 2`), contains only two "Cold-start drill" sections — there is no "Cold-start drill 3" write-up anywhere in the file, despite it being the file the campaign says must carry "the command that reproduces it" for every finding.
+
+3. **`decisions.md` and `STEERING.md` directly disagree about "concurrent `prove --record`".** `decisions.md` (2026-08-14 row) lumps it in with Windows/harness-reload/aerender under *"Not covered, accepted for this campaign… recorded, not built"*, and justifies all five together as needing *"a machine or an account this campaign does not have."* `STEERING.md` item 3 says the opposite: *"Four are adjudicated in `decisions.md`. **Concurrent `prove --record` is the one that can be tested here**"* — no special machine or account needed, just two local processes — and instructs the next iteration to actually write that test, demoting it to a decision only "if it does not [corrupt]". `decisions.md`'s stated cost reasoning (Windows host / harness install / AE seat) doesn't even apply to this item, confirming the adjudication was written for the other four and appears to have absorbed this fifth one by mistake. A fresh session cannot tell whether this gap is closed or still open.
+
+4. **§7's stopping-rule denominator ("two consecutive rounds, zero new rows in `failures.md`") cannot be recomputed from `failures.md` as written.** `failures.md`'s own preamble declares it the sole authority over `campaign-01.md`'s round narrative ("When they disagree, this file wins"), but its "Trend" column is free text that mixes single-round labels ("R3"), multi-round ranges ("R2, R3, R4"), and bare dates with no round at all ("2026-08-13 and 2026-08-14, both green on macOS and red in CI"). Tallying "new causes per round" directly from this column produces a different shape than the "6 → 1 → 0 → 2 → 5 → 1" sequence asserted in `campaign-01.md`'s Round 6 section (e.g. several rows first tagged "R3" in `failures.md` — the different-function fix, the blacklist-to-whitelist rewrite, the cwd-scope guard — don't fit a "round 3 = 0 new causes" reading). Since `goal.md`'s claim *"the streak is 0 of 2, reset by round 5"* rests on this exact computation, and the designated authoritative file doesn't support mechanically re-deriving it, this number has to be taken on faith rather than verified.
+
+5. **No visible path to ever closing criterion 1.** It needs two consecutive review rounds with zero new causes; across six rounds there has never been more than one zero round in isolation (per `campaign-01.md`'s own sequence). Yet `STEERING.md`'s current three-item work list contains no instruction to run a seventh review round, and criterion 1 is not in the "Parked — blocked on the owner" table either. A fresh session has no way to know whether more review rounds are expected, how many, or whether this criterion is meant to be reclassified/parked instead.
+
+6. **`docs/changelog.md` is confirmed stale**, exactly as `STEERING.md` item 2 already flags: it stops at "I13" while `goal.md`'s iteration log continues with SHA-bearing work through rounds 4, 5, and 6 (round 5's 14 fatals, round 6's fixes, the printed-instructions oracle). This is a known, currently-open gap, not a hypothetical — worth noting because `docs/reviews/campaign-01.md`'s "Cold-start drill 2" section says this exact defect ("`changelog.md` contradicted the iteration log and omitted the last two landings") was already found and fixed once; it has since recurred.
+
+7. **Possible unacknowledged gap: GitHub Actions YAML is only parsed, not executed by its real interpreter.** Criterion 1's "how it is checked" column offers *"a YAML reader over the emitted workflow"* as satisfying §7 condition 2 ("every grammar this skill EMITS is executed by its real interpreter in the check"). A structural YAML parse is not the same claim as execution by GitHub's own runner — and `failures.md` documents this exact distinction as one of the campaign's most serious recurring causes ("a grammar emitted for an interpreter the check cannot run," the reason `--kind cron` was cut outright). Nothing in the ledger's "install path, run end to end" section or the "not covered" list mentions actually running the emitted GitHub workflow, so it's unclear whether this was considered and judged acceptable, or simply not noticed the way cron wasn't for three rounds. Not provable as a defect from the ledger alone, but not resolvable either.
+
+8. **Minor: criterion 5's evidence cites a file outside the docs/ ledger.** *"doctrine in `references/critics.md`"* — under the drill's own rules (docs/** only, no source), this half of the evidence is unverifiable. The empirical part of the claim (five `codex` invocations in `campaign-01.md` § Round 2) is independently checkable and does hold up, so this is minor, but it's still a pointer the ledger leans on that a docs-only session cannot open.
+
+---
+
+**Clarification finding 2 asks for:** the «Cold-start drill 3» that `STEERING.md`
+and `goal.md` both name never got a section of its own here. It is the
+reviewer tagged «cold-start drill 3» in Round 5's table above, and its
+findings are inside that round's fourteen fatals — there is no standalone
+write-up, and there never was one. This paragraph is that absence made
+explicit instead of left dangling.
+
+Of the eight findings, one is fixed in the same commit as this section: the
+guard table grew a seventh row in round 6 (the printed-instructions oracle)
+and criterion 1's evidence cell still said six — see `goal.md`. The other
+seven are recorded here for whichever iteration picks them up; none of them
+is fixed in this pass.
+
 ## What none of it covers
 
 - Windows. No reviewer had a host; `path.join` backslashes in `args`, and the

@@ -56,10 +56,10 @@ guard is a new row.
 
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
-| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **partly** — **6 guards of 6** have oracles, each watched failing against the historic defect it covers; every emitted grammar is now read by its interpreter. The streak is 0 of 2, reset by round 5 — that is the only clause still open | `docs/reviews/campaign-01.md` §§ Round 4, Round 5 |
+| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **partly** — **7 guards of 7** have oracles (this cell said 6 until drill 4 found the table had grown a seventh row in round 6 and the prose had not caught up — `docs/failures.md` § A document stating as an invariant), each watched failing against the historic defect it covers; every emitted grammar is now read by its interpreter. The streak is 0 of 2, reset by round 5 — that is the only clause still open | `docs/reviews/campaign-01.md` §§ Round 4, Round 5 |
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
-| 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | **the procedure, because «the orchestrator records it» is unclosable when the resuming session IS the orchestrator:** dispatch a fresh read-only drill, paste its verdict verbatim into `docs/reviews/`, and mark this met only if it answered YES to «could a fresh session CLOSE the work». A drill run by the party it audits does not count | partly — drills 1 and 2 both «start but not close», 14 findings between them, all fixed. Drill 3 is running against this version | `docs/reviews/campaign-01.md` §§ Cold-start drill, Cold-start drill 2 |
+| 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | **the procedure, because «the orchestrator records it» is unclosable when the resuming session IS the orchestrator:** dispatch a fresh read-only drill, paste its verdict verbatim into `docs/reviews/`, and mark this met only if it answered YES to «could a fresh session CLOSE the work». A drill run by the party it audits does not count | partly — drill 4 (fresh read-only subagent, `docs/**` only) verdict: **NO**. RESUME is clear; CLOSE is not — 8 findings, the two sharpest being a stale guard count in this file (fixed above, same commit) and a «Cold-start drill 3» that `STEERING.md` and this file both name but that has no section anywhere in the ledger | `docs/reviews/campaign-01.md` §§ Cold-start drill, Cold-start drill 2, Cold-start drill 4 |
 | 5 | Verification is not self-service and not same-model-only: the skeptic can be a different model, named with commands that exist here | `command -v` for each named tool; one claim actually refereed by it | yes | `codex exec --sandbox read-only` refuted the central claim about `prove.mjs` with 5 invocations, 3 of them missed by four same-model reviewers — `docs/reviews/campaign-01.md` § Round 2; doctrine in `references/critics.md` |
 | 6 | The cost of a configured MCP server is measured, or the choice not to measure it is recorded with its cost | an entry in `decisions.md` naming what stays unmeasured and why | yes | `decisions.md`, «Not built: `tools.mjs --cost`» — and a landed test refuses that flag, so «measured» cannot be a typo |
 
@@ -158,3 +158,15 @@ guard is a new row.
 - **prove** `npm run verify` → 0 — R6 doc claims · 2026-08-14T11:27:31Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R6: printed instructions oracle · 2026-08-14T11:30:19Z
 - **prove** `npm run verify` → 0 — the platform default, again · 2026-08-14T11:32:48Z
+- **I14** — cold-start drill 4: a fresh read-only subagent, given only
+  `docs/*.md` and `docs/reviews/campaign-01.md`, verdict **NO** — RESUME is
+  clear, CLOSE is not. Pasted verbatim in `docs/reviews/campaign-01.md` §
+  Cold-start drill 4, 8 findings. One is fixed in this same commit: the guard
+  table grew a seventh row in round 6 and criterion 1's evidence cell still
+  said six. The other seven — a dangling «Cold-start drill 3» reference, a
+  `decisions.md`/`STEERING.md` disagreement about concurrent `prove --record`,
+  §7's stopping-rule count not recomputable from `failures.md`'s own Trend
+  column, no scheduled path to criterion 1 ever reaching «met», and three
+  smaller ones — are recorded, not fixed, for whichever iteration picks them
+  up next.
+- **prove** `npm run verify` → 0 — cold-start drill 4: verdict NO recorded, guard count 6→7 fixed, 8 findings ledgered · 2026-08-14T12:03:35Z

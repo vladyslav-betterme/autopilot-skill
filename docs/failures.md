@@ -31,7 +31,7 @@ inventing a direction.
 | **A composed chain whose short-circuit swallows the payload** | 1 | first round |
 | **`process.exit` before stdout has drained** | 1 | first round |
 | **A discovered value hardcoded at the second call site** | 1 | first round |
-| **A document stating as an invariant what was never checked** | 9 claims | first round — and one of them was written BY this campaign, an hour after the rule against it |
+| **A document stating as an invariant what was never checked** | 10 claims | first round — one written BY this campaign an hour after the rule against it; a tenth found by cold-start drill 4, in this campaign's own ledger again |
 | **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 — `path.resolve` checked, `path.join` wrote; `prove` walked up, the carrier did not |
 | **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 — the separator regex; replaced by a whitelist |
 | **The guard is beaten by the layer IN FRONT of it** | 3 | R2, R3, R4 — each round's fix was correct and the stage feeding it was forgeable |
@@ -124,6 +124,15 @@ message says the ledger must carry a command that reproduces each claim.
 making it. The record is written from intent, and intent is not the file. Run
 the grep that would fail if you had not done it — it takes four seconds, and
 this one took four seconds to catch.
+
+**A tenth, four rounds later, same shape:** `goal.md`'s guard table grew a
+seventh row in round 6 (the printed-instructions oracle); the prose beside it
+— criterion 1's evidence cell, «6 guards of 6» — was never revisited to match,
+and survived one more round under a criterion that cites that same table as
+its own evidence. A cold-start drill found it, not a reader —
+`docs/reviews/campaign-01.md` § Cold-start drill 4. Fixed in the same commit
+as this row; the tell is unchanged from the ninth instance above, which is
+the point.
 
 ### A fix that answers the question with a DIFFERENT function than the one that acts
 
