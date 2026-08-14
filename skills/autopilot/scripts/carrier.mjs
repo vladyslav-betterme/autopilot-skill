@@ -21,7 +21,7 @@
  * Prints to stdout. Writes nothing, installs nothing, needs no dependencies.
  */
 import path from 'node:path';
-import { findLedgerHomes, LEDGER_HOMES, STOP_FILE } from './lib.mjs';
+import { findLedgerHomes, projectDirs, LEDGER_HOMES, STOP_FILE } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -67,9 +67,28 @@ if (ledgers.length > 1) {
  * agent every interval, forever, under a banner reading «the same file that
  * stops the loop». It was not the same file.
  */
-const stopPaths = LEDGER_HOMES.map((h) => path.join(h, STOP_FILE));
-const stopPath = ledgers.length ? path.join(path.relative(root, ledgers[0]) || '.', STOP_FILE) : STOP_FILE;
+// ABSOLUTE, and from the same walk `prove.mjs` uses. Nine paths relative to
+// cwd are the right set only when the carrier is emitted from the ledger's own
+// directory: emitted from `packages/api`, the unit watched `packages/api/docs/STOP`
+// while the loop honoured `docs/STOP` two levels up — and the banner even
+// PRINTED `../../docs/STOP` as the project's stop path while watching none of it.
+const stopPaths = projectDirs(root).flatMap((d) => LEDGER_HOMES.map((h) => path.join(d, h, STOP_FILE)));
+const stopPath = ledgers.length ? path.join(ledgers[0], STOP_FILE) : path.join(root, STOP_FILE);
 const logDir = 'agent-logs';
+
+/**
+ * A minute-field schedule is only correct below an hour. Above it the old
+ * expression put a step-1 wildcard in the MINUTE field for anything an hour or
+ * longer, so `--every 2h` asked for 720 agent invocations a day instead of 12,
+ * under a header reading «every 120 min». §6 approves a cost; that delivered
+ * sixty times it. (The old expression is not quoted here: it contains the
+ * characters that end a block comment, which is its own small lesson.)
+ */
+const cronExpr = minutes < 60
+  ? `*/${minutes} * * * *`
+  : minutes % 1440 === 0
+    ? `0 0 */${Math.min(minutes / 1440, 28)} * *`
+    : `0 */${Math.max(1, Math.round(minutes / 60))} * * *`;
 
 /**
  * The wrapper every carrier runs, and the reason this is not just a cron line.
@@ -123,7 +142,7 @@ const CRON = () => `# every ${minutes} min — autopilot carrier for ${root}
 # PATH is set explicitly: cron's is nearly empty, and «command not found» in a
 # job nobody watches looks exactly like «the loop is quietly working».
 PATH=${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}
-*/${minutes < 60 ? minutes : 1} ${minutes < 60 ? '*' : `*/${Math.round(minutes / 60)}`} * * * /bin/sh -c '${wrapper.replace(/'/g, `'\\''`)}' >> ${path.join(root, logDir, 'carrier.log')} 2>&1`;
+${cronExpr} /bin/sh -c '${wrapper.replace(/'/g, `'\\''`)}' >> ${path.join(root, logDir, 'carrier.log')} 2>&1`;
 
 const GITHUB = () => `# The only carrier here that survives the laptop being closed — and the only
 # one that spends somebody's money on a schedule. Every run costs an agent
@@ -133,7 +152,7 @@ const GITHUB = () => `# The only carrier here that survives the laptop being clo
 name: autopilot
 on:
   schedule:
-    - cron: '*/${minutes < 60 ? minutes : 1} ${minutes < 60 ? '*' : `*/${Math.round(minutes / 60)}`} * * *'
+    - cron: '${cronExpr}'
   workflow_dispatch:
 concurrency:
   group: autopilot-\${{ github.ref }}   # the overlap lock, done by the platform
@@ -145,9 +164,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
-      - name: stop file halts the carrier too
-        run: 'for s in ${stopPaths.join(' ')}; do [ -e "$s" ] && exit 0; done; true'
+      - name: is there a STOP file?
+        id: stop
+        # A bare exit 0 here would end this STEP successfully and GitHub would
+        # run the next one anyway — the switch was inert. An output plus an if:
+        # is what actually skips the agent.
+        run: |
+          if [ -e ${JSON.stringify(path.join(path.relative(root, ledgers[0] ?? root) || '.', STOP_FILE))} ]; then
+            echo "halted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "halted=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: one iteration
+        if: steps.stop.outputs.halted != 'true'
         env:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
         run: ${agent}`;

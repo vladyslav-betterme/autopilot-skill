@@ -87,21 +87,28 @@ const present = (p) => { try { fs.lstatSync(p); return true; } catch { return fa
  *  reproduction after «fixing» it. */
 export const realPath = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 
-function projectDirs(start) {
+export function projectDirs(start) {
   const dirs = [];
-  const home = realPath(os.homedir());
+  const homeRaw = os.homedir();
+  // An EMPTY $HOME made `realPath('')` return the cwd, so `dir === home` matched
+  // on iteration 0 for every project and the walk returned NOTHING — and every
+  // consumer reads nothing as «I looked and there was none»: no STOP, no ledger,
+  // and the piped-check guard silently off. Fail closed, not open.
+  const home = homeRaw ? realPath(homeRaw) : null;
   let dir = realPath(start);
-  for (let i = 0; i < 12; i++) {
-    // $HOME is the boundary and is NEVER scanned. It used to be pushed before
-    // the break, and `notes` is one of the ledger homes — so a project with no
-    // `.git` under the home directory elected `~/notes/goal.md`, and the loop
-    // appended its results to the owner's personal file. Reproduced by a
-    // reviewer; it is the exact defect the comment above claims to prevent.
-    if (dir === home) break;
+  // 40, not 12: at 13 directories below a repo root the STOP silently vanished
+  // and the check ran green. The $HOME and `.git` boundaries do the real work;
+  // this is only a runaway guard, and walking forty directories costs nothing.
+  for (let i = 0; i < 40; i++) {
+    // The directory you are STANDING IN is always scanned, even if it is $HOME:
+    // the defect this boundary exists for was wandering UP into `~/notes`, not
+    // reading the project someone is actually in. A dotfiles repo, a notes
+    // vault, «run the loop on my home directory» — all elected a ledger that
+    // the runner could then never see, and a STOP that never halted anything.
     dirs.push(dir);
     if (hasExactly(dir, '.git')) break;
     const up = path.dirname(dir);
-    if (up === dir) break;
+    if (up === dir || up === home) break;
     dir = up;
   }
   return dirs;
@@ -179,3 +186,18 @@ export function findUp(start, name) {
   }
   return null;
 }
+
+/** Is this a map of servers, or something that only looks like one?
+ *
+ *  Asked in ONE place because the READER was hardened and the WRITER one file
+ *  over was not: `{"mcpServers":["legacy"]}` made `new-mcp` print «registered»
+ *  and exit 0 while `JSON.stringify` silently dropped the named property it had
+ *  set on an array — and `{"mcpServers":"see ./servers.d"}` crashed with a raw
+ *  TypeError. `tools.mjs` refused both, in the same commit. */
+export function serverMapProblem(map) {
+  if (map === undefined || map === null) return null;
+  if (Array.isArray(map)) return 'an array';
+  if (typeof map !== 'object') return typeof map;
+  return null;
+}
+

@@ -480,10 +480,73 @@ test('a pipe inside the npm script is refused — argv cannot see it', () => {
   // through sh -c, so the pipe never appears in argv.
   const d = tmp();
   fs.writeFileSync(path.join(d, 'package.json'), '{"name":"x","scripts":{"verify":"node -e \\"process.exit(1)\\" | tail -1"}}');
-  assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /the check itself is piped/);
+  assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /the check itself is compound/);
 });
 
-test('a COMPOUND shell check is refused — its status is the last command\'s', () => {
+test('the compound guard is a WHITELIST — it refuses what composes and allows what cannot lie', () => {
+  // Round 3 refuted the three-separator regex from both sides at once: it missed
+  // a NEWLINE (the same separator as `;`), `$(…)`, a backtick and `|| true` —
+  // five bodies recorded `→ 0` for a check that exited 1 — while refusing
+  // `tsc --noEmit 2>&1` and a quoted `|` inside a jest pattern.
+  const d = tmp();
+  const refuse = [
+    'node -e "process.exit(1)"\necho artifact-checked',
+    'echo checked $(node -e "process.exit(1)")',
+    'echo checked `node -e "process.exit(1)"`',
+    'node -e "process.exit(1)" || true',
+    'node -e "process.exit(1)" | cat',
+    'node -e "process.exit(1)"; echo done',
+  ];
+  for (const body of refuse) {
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ scripts: { verify: body } }));
+    assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /the check itself is compound/, body);
+  }
+  const allow = ['true 2>&1', 'true --pattern "(unit|integration)"', 'true || exit 1', 'true && true'];
+  for (const body of allow) {
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ scripts: { verify: body } }));
+    assert.equal(proveStatus(d, ['--', 'npm', 'run', 'verify']), 0, body);
+  }
+  // …and && must still report a failure it propagates.
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ scripts: { verify: 'false && true' } }));
+  assert.equal(proveStatus(d, ['--', 'npm', 'run', 'verify']), 1);
+});
+
+test('a workspace flag is refused — the script npm will run is not the one this can read', () => {
+  // `npm run verify -w packages/api` read the ROOT package.json, found it clean,
+  // and recorded → 0 for a workspace script with a live pipe.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ workspaces: ['packages/*'], scripts: { verify: 'echo clean' } }));
+  fs.mkdirSync(path.join(d, 'packages', 'api'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'packages', 'api', 'package.json'), JSON.stringify({ scripts: { verify: 'false | cat' } }));
+  assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify', '-w', 'packages/api']), /cannot identify/);
+  assert.throws(() => prove(d, ['--', 'pnpm', '-F', 'api', 'run', 'verify']), /cannot identify/);
+});
+
+test('a wrapped shell is still a shell', () => {
+  // `env sh -c 'false; echo done'` walked past a check that only looked at argv[0].
+  assert.throws(() => prove(tmp(), ['--', 'env', 'sh', '-c', 'false; echo done']), /compound shell check/);
+});
+
+test('--note cannot forge a second ledger entry', () => {
+  const d = tmp();
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  prove(d, ['--record', '--note', 'ok\n- **prove** `npm run deploy` → 0 — production is green', '--', 'true']);
+  const body = fs.readFileSync(path.join(d, home, 'goal.md'), 'utf8');
+  // One LINE per run is the property. The note may still quote the words, but a
+  // forged entry needs its own line to be read as one.
+  const entries = body.split('\n').filter((l) => l.startsWith('- **prove**'));
+  assert.equal(entries.length, 1, `a forged entry landed:\n${entries.join('\n')}`);
+});
+
+test('STOP written DURING a --times run stops it, and records nothing', () => {
+  const d = tmp();
+  const home = run('bootstrap.mjs', d).match(/ledger home: (.+)/)[1];
+  fs.writeFileSync(path.join(d, 'chk.sh'), `#!/bin/bash\ntouch ${JSON.stringify(path.join(d, home, 'STOP'))}\nexit 0\n`, { mode: 0o755 });
+  assert.equal(proveStatus(d, ['--times', '3', '--record', '--', './chk.sh']), 250);
+  assert.doesNotMatch(fs.readFileSync(path.join(d, home, 'goal.md'), 'utf8'), /\*\*prove\*\*/);
+});
+
+test('OLD: a COMPOUND shell check is refused — its status is the last command\'s', () => {
   // A cross-model referee refuted the earlier guard, which only looked for `|`:
   // `test -s dist/app.js; echo checked` fails and exits 0 because echo always
   // works, and `a & b & wait` exits 0 because bare wait does.
@@ -640,7 +703,7 @@ test('the pipe is found through delegation, a lifecycle script, and from a subdi
     ['{"scripts":{"verify":"false | cat"}}', path.join(d, 'src')],
   ]) {
     fs.writeFileSync(path.join(d, 'package.json'), pkg);
-    assert.throws(() => prove(cwd, ['--', 'npm', 'run', 'verify']), /the check itself is piped/, pkg);
+    assert.throws(() => prove(cwd, ['--', 'npm', 'run', 'verify']), /the check itself is compound/, pkg);
   }
 });
 
@@ -730,6 +793,51 @@ test('bootstrap names the ledgers already deeper in the tree', () => {
   assert.match(run('bootstrap.mjs', d), /already exists deeper in this tree/);
 });
 
+test('an ABSOLUTE --dir inside the project writes where it says', () => {
+  // Round 1 «fixed» --dir /opt/x by refusing paths that resolve OUTSIDE. The
+  // root cause was two functions answering one question: the check used
+  // path.resolve, the write used path.join. An absolute --dir INSIDE the
+  // project passed the check and wrote to a doubled path, registered an arg
+  // that does not exist, and printed four false lines, exit 0.
+  const d = tmp();
+  const abs = path.join(d, 'tools', 'ae-mcp');
+  run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects renders, the CLI was not enough', '--dir', abs]);
+  assert.ok(fs.existsSync(path.join(abs, 'server.mjs')), 'the file is not where it said');
+  const args = JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8')).mcpServers.ae.args;
+  assert.ok(fs.existsSync(path.resolve(d, args[0])), `registered ${args[0]}, which does not exist`);
+});
+
+test('a server map that is an array or a string is refused, not «registered»', () => {
+  // `next[key][name] = …` on an array sets a named property that JSON.stringify
+  // silently drops: «registered», exit 0, nothing registered. On a string it
+  // threw, outside the try that removes the scaffold.
+  for (const bad of ['{"mcpServers":["legacy"],"other":"keep me"}', '{"mcpServers":"see ./servers.d","note":"keep"}']) {
+    const d = tmp();
+    fs.writeFileSync(path.join(d, '.mcp.json'), bad);
+    assert.throws(() => run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects renders, the CLI was not enough']), /not an object of servers/, bad);
+    assert.equal(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8'), bad, 'their config changed');
+    assert.equal(fs.existsSync(path.join(d, 'tools')), false, 'a scaffold was left behind');
+  }
+});
+
+test('a hardlinked config is refused — realpath cannot see a second name', () => {
+  const d = tmp();
+  const outside = path.join(tmp(), 'important.json');
+  const body = '{"mcpServers":{"prod":{"command":"real"}},"secret":"outside"}\n';
+  fs.writeFileSync(outside, body);
+  fs.linkSync(outside, path.join(d, '.mcp.json'));
+  assert.throws(() => run('new-mcp.mjs', d, ['ae', '-d', 'drives After Effects renders, the CLI was not enough']), /links/);
+  assert.equal(fs.readFileSync(outside, 'utf8'), body);
+});
+
+test('«constructor» is not already registered in an empty config', () => {
+  // The name regex admits it and `config[key][name]` found Object.prototype's.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, '.mcp.json'), '{"mcpServers":{"other":{"command":"node"}}}');
+  run('new-mcp.mjs', d, ['constructor', '-d', 'a server whose name is inherited from Object.prototype']);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8')).mcpServers.constructor.args);
+});
+
 /**
  * The carrier — what runs the loop when the window is closed.
  *
@@ -780,6 +888,66 @@ test('the carrier honours every STOP path the loop does, not one baked-in string
   const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
   execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
   assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'the carrier ran on regardless');
+});
+
+test('the carrier honours a STOP found by the WALK, not one relative to cwd', () => {
+  // Emitted from packages/api, the unit watched packages/api/docs/STOP while the
+  // loop honoured docs/STOP two levels up — and the banner PRINTED ../../docs/STOP
+  // as the project's stop path while watching none of it.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.git'));
+  fs.mkdirSync(path.join(d, 'docs'));
+  run('bootstrap.mjs', d);
+  fs.writeFileSync(path.join(d, 'docs', 'STOP'), 'halt\n');
+  const sub = path.join(d, 'packages', 'api');
+  fs.mkdirSync(sub, { recursive: true });
+  assert.equal(proveStatus(sub, ['--', 'true']), 250, 'the loop did not stop');
+  const wrapper = carrierWrapper(sub, ['--agent', `echo ran >> ${JSON.stringify(path.join(d, 'ran.txt'))}`]);
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: sub });
+  assert.equal(fs.existsSync(path.join(d, 'ran.txt')), false, 'the carrier ran with a STOP two levels up');
+});
+
+test('an hourly interval is an hourly cron, not one that fires every minute', () => {
+  // `--every 2h` emitted a step-1 minute field: 720 agent invocations a day
+  // instead of 12, under a header saying «every 120 min».
+  const d = tmp();
+  const cron = (every) => execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'cron', '--every', every],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').find((l) => /^[*0-9]/.test(l));
+  assert.match(cron('30m'), /^\*\/30 \* \* \* \*/);
+  assert.match(cron('2h'), /^0 \*\/2 \* \* \*/);
+  assert.match(cron('6h'), /^0 \*\/6 \* \* \*/);
+});
+
+test('a walk that finds nothing must not mean «no STOP, no ledger, no guard»', () => {
+  // With HOME empty, realPath('') returned the cwd, the walk broke on iteration
+  // 0 and returned []. Every consumer read that as «I looked and found none»:
+  // a STOP present did not halt, and a piped npm check recorded → 0.
+  const d = tmp();
+  run('bootstrap.mjs', d);
+  fs.writeFileSync(path.join(d, 'STOP'), 'halt\n');
+  let status = 0;
+  try {
+    execFileSync('node', [path.join(SCRIPTS, 'prove.mjs'), '--', 'echo', 'X'],
+      { cwd: d, encoding: 'utf8', env: { ...process.env, HOME: '' } });
+  } catch (err) { status = err.status; }
+  assert.equal(status, 250, 'an empty HOME turned the stop off');
+});
+
+test('the project you are STANDING IN is scanned, even when it is $HOME', () => {
+  // A dotfiles repo or a notes vault: bootstrap elected `notes`, announced it,
+  // and the runner could then never see the ledger it had just created.
+  const home = tmp();
+  fs.mkdirSync(path.join(home, 'notes'));
+  const out = execFileSync('node', [path.join(SCRIPTS, 'bootstrap.mjs')],
+    { cwd: home, encoding: 'utf8', env: { ...process.env, HOME: home } });
+  const ledger = out.match(/ledger home: (.+)/)[1];
+  fs.writeFileSync(path.join(home, ledger, 'STOP'), 'halt\n');
+  let status = 0;
+  try {
+    execFileSync('node', [path.join(SCRIPTS, 'prove.mjs'), '--', 'echo', 'X'],
+      { cwd: home, encoding: 'utf8', env: { ...process.env, HOME: home } });
+  } catch (err) { status = err.status; }
+  assert.equal(status, 250, `bootstrap said «${ledger}» and the runner could not see it`);
 });
 
 test('a run that overlaps the previous one does nothing — two loops share one ledger', () => {

@@ -60,12 +60,19 @@ for (let i = 0; i < sep; i++) {
     // Five identical `→ 0` lines cannot be told from a loop that is stuck: a
     // cold-start drill read the log and said a loop making progress and a loop
     // spinning look exactly the same. The note is what makes them differ.
-    note = inline ?? argv[++i];
+    note = (inline ?? argv[++i] ?? '').replace(/\s+/g, ' ').trim();
+    // Collapsed, because raw newlines let one run FORGE a second ledger entry:
+    // `--note $'ok\n- **prove** `npm run deploy` → 0'` wrote a line, byte-identical
+    // in shape to a real one, for a command that never ran. The tool's own
+    // premise, defeated through the flag the skill tells you to use.
     if (!note) die('--note wants text — what this run is evidence FOR');
   } else if (name === '--times') {
     const raw = inline ?? argv[++i];
     // /^\d+$/ and not Number(): `0x10` ran sixteen times and `1e3` ran a thousand.
-    if (!/^\d+$/.test(raw ?? '') || Number(raw) < 1) die(`--times wants a positive whole number, got «${raw}»`);
+    // Bounded: `--times 99999999999999999999` passes /^\d+$/ and loops forever.
+    if (!/^\d+$/.test(raw ?? '') || Number(raw) < 1 || Number(raw) > 100) {
+      die(`--times wants a whole number between 1 and 100, got «${raw}»`);
+    }
     times = Number(raw);
   } else {
     die(`unknown flag «${argv[i]}» — the flags are --times N, --record and --note "text".\n` +
@@ -101,33 +108,74 @@ const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  * good `grep -Fq '|' README.md`. Both halves of that were found by reviewers:
  * one that the guard caught nothing real, one that it caught the wrong thing.
  */
-const COMPOUND = /(^|[^|])\|([^|]|$)|;|(^|[^&])&([^&]|$)/;
-const shellScript = SHELLS.has(path.basename(cmd[0] ?? ''))
-  ? cmd.slice(1).find((a) => !a.startsWith('-'))
-  : null;
-if (shellScript && COMPOUND.test(shellScript)) {
-  die(`refusing a compound shell check: ${JSON.stringify(shellScript)}\n` +
-    'A script joined by `|`, `;` or `&` exits with its LAST command\'s status, so a failure\n' +
-    'earlier in it is invisible. Run the check itself, or move the script into a file whose\n' +
-    'own exit code is the answer (`&&` is fine — it propagates failure).');
+/**
+ * A check must be ONE simple command, and this is a WHITELIST because the
+ * blacklist lost a grammar war.
+ *
+ * The three-separator regex missed a NEWLINE — the same separator as `;`, and
+ * the way anyone writes a script longer than one line — plus `$(…)`, backticks
+ * and `|| true`, which is the most common failure-swallowing idiom there is.
+ * Five bodies, each recorded as `→ 0` for a check that exited 1. Meanwhile it
+ * REFUSED `tsc --noEmit 2>&1` and `jest --testPathPattern "(unit|integration)"`,
+ * which are honest single commands.
+ *
+ * So: strip what cannot lie, then refuse anything left that can compose.
+ *   quoted text   — a `|` inside an argument is data
+ *   redirections  — `2>&1`, `> file`: the status is unchanged
+ *   `&&`          — propagates failure, which is the whole difference
+ *   `|| exit …`   — the honest guard idiom a cross-model referee produced
+ * What remains and still holds a newline, `;`, `|`, `&`, a backtick or `$(`
+ * decides the status somewhere other than the command you named.
+ */
+function compoundProblem(script) {
+  const stripped = String(script)
+    .replace(/'[^']*'/g, ' ')
+    .replace(/"[^"]*"/g, ' ')
+    .replace(/\d?>&\d?/g, ' ')
+    .replace(/[<>]{1,2}\s*[^\s;|&]+/g, ' ')
+    .replace(/&&/g, ' ')
+    .replace(/\|\|\s*exit\b/g, ' ');
+  const m = /[\n;|&`]|\$\(/.exec(stripped);
+  return m ? (m[0] === '\n' ? 'a newline' : `«${m[0]}»`) : null;
+}
+
+/** The shell may be wrapped: `env sh -c '…'`, `nice`, `time`, `cross-env`. Find
+ *  the shell wherever it is rather than only at argv[0]. */
+const shellAt = cmd.findIndex((a) => SHELLS.has(path.basename(a)));
+const shellScript = shellAt === -1 ? null : cmd.slice(shellAt + 1).find((a) => !a.startsWith('-'));
+const shellProblem = shellScript ? compoundProblem(shellScript) : null;
+if (shellProblem) {
+  die(`refusing a compound shell check — ${shellProblem} decides the status, not your command:\n` +
+    `  ${JSON.stringify(shellScript)}\n` +
+    'A script joined by a newline, `;`, `|`, `&`, `$(…)` or `|| <something that succeeds>` exits with\n' +
+    'SOMETHING ELSE\'S status. Run the check itself, or move the script into a file whose own exit\n' +
+    'code is the answer. `&&`, redirections and `|| exit N` are fine — they cannot hide a failure.');
 }
 
 /**
  * The lie where it actually lives: inside the script the check RESOLVES to.
  *
- * `prove.mjs -- npm run verify` was the invocation this skill recommends, and
+ * `prove.mjs -- npm run verify` is the invocation this skill recommends, and
  * with `"verify": "tsc | tail"` in package.json it recorded `→ 0` for a failing
- * check and printed «the number came from the run». npm runs its scripts
- * through `sh -c`, so the pipe is invisible from argv — it has to be read out
- * of the script itself.
+ * check. npm runs its scripts through `sh -c`, so the pipe is invisible from
+ * argv — it has to be read out of the script itself.
  *
- * `&&` is deliberately allowed: it propagates failure, which is the whole
- * difference. What this CANNOT see is a pipe inside a shell script, a Makefile
- * target or a binary the check invokes — say so rather than implying coverage.
+ * What this CANNOT see is a pipe inside a shell script, a Makefile target or a
+ * binary the check invokes — say so rather than implying coverage.
  */
 const RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+/** A workspace flag means npm will read a package.json this cannot identify —
+ *  `npm run verify -w packages/api` resolved the ROOT script and cleared a file
+ *  npm never reads. Refusing beats clearing the wrong one. */
+const WORKSPACE_FLAGS = /^(-w|--workspace|--workspaces|-F|--filter|--prefix|-C|--dir)($|=)/;
 function hiddenPipe() {
   if (!RUNNERS.has(path.basename(cmd[0] ?? ''))) return null;
+  const ws = cmd.slice(1).find((a) => WORKSPACE_FLAGS.test(a));
+  if (ws) {
+    die(`«${ws}» points the check at a package this runner cannot identify, so it cannot read that\n` +
+      'script to see whether it pipes — and the one it CAN read is a different package\'s.\n' +
+      'Run the check from that package\'s own directory instead.');
+  }
   const rest = cmd.slice(1).filter((a) => !a.startsWith('-'));
   const entry = rest[0] === 'run' || rest[0] === 'run-script' ? rest[1] : rest[0];
   if (!entry) return null;
@@ -138,10 +186,9 @@ function hiddenPipe() {
   try { pkg = JSON.parse(fs.readFileSync(pkgPath ?? '', 'utf8')); } catch { return null; }
   const scripts = pkg?.scripts;
   if (!scripts) return null;
-  // Follow the graph, not the one key. A reviewer walked past the single-key
-  // version three ways: `"verify": "npm run inner"` with the pipe in `inner`,
-  // a `preverify` lifecycle script, and the walk-up above — each of them a
-  // sibling key in the very file this function had already parsed.
+  // Follow the graph, not the one key: `"verify": "npm run inner"` with the pipe
+  // in `inner`, and `pre`/`post` lifecycle scripts, are each a sibling key in
+  // the very file this function has already parsed.
   const seen = new Set();
   const queue = [entry];
   while (queue.length) {
@@ -151,7 +198,8 @@ function hiddenPipe() {
     for (const key of [`pre${name}`, name, `post${name}`]) {
       const body = scripts[key];
       if (typeof body !== 'string') continue;
-      if (COMPOUND.test(body)) return { script: key, body };
+      const problem = compoundProblem(body);
+      if (problem) return { script: key, body, problem };
       for (const m of body.matchAll(/\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+|run-script\s+)?([\w:.-]+)/g)) queue.push(m[1]);
     }
   }
@@ -159,7 +207,7 @@ function hiddenPipe() {
 }
 const piped = hiddenPipe();
 if (piped) {
-  die(`the check itself is piped — its status is the LAST command's, not the check's.\n` +
+  die(`the check itself is compound — ${piped.problem} decides its status, not the command it names.\n` +
     `  "${piped.script}": ${JSON.stringify(piped.body)}\n` +
     'Fix the script (drop the pipe, or redirect to a file), then run this again.\n' +
     'This is the shape that shipped six red deploys reading as green locally.');
@@ -196,6 +244,13 @@ if (record && homes.length > 1) {
 
 const codes = [];
 for (let i = 0; i < times; i++) {
+  // Re-checked EVERY run. It was read once, before the loop, so a STOP written
+  // during a slow `--times 3` was ignored for the remaining runs and for the
+  // append — and `--times` is used precisely when a check is slow.
+  if (i > 0 && findStopFile(root)) {
+    console.error(`STOPPED mid-run after ${i} of ${times} — nothing was recorded.`);
+    process.exit(STOPPED);
+  }
   // stdio inherit: the human and the agent see the real output live, and the
   // status below is this process's own reading of the child — not a summary.
   const res = spawnSync(cmd[0], cmd.slice(1), { cwd: root, stdio: 'inherit' });
@@ -208,7 +263,7 @@ for (let i = 0; i < times; i++) {
 
 /** The recorded line must be re-runnable. Joining argv with spaces turned a
  *  legitimate check into text that prove.mjs itself would refuse. */
-const quote = (a) => (/^[\w@.,:=/+-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+const quote = (a) => (/^[\w@.,:=/+-]+$/.test(a) ? a : `'${a.replace(/\s+/g, ' ').replace(/'/g, `'\\''`)}'`);
 const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const agreed = new Set(codes).size === 1;
 const passed = agreed && codes[0] === 0;
@@ -237,6 +292,7 @@ if (record) {
   }
 }
 
+console.log(`prove: ${stopAt ? 'stopped' : !agreed ? 'flaky' : 'exit ' + codes[0]}`);
 if (!agreed) {
   console.error('\nFLAKY: the same check returned different statuses. A criterion must not be marked met on this.');
   process.exit(FLAKY);

@@ -22,7 +22,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { realPath } from './lib.mjs';
+import { realPath, serverMapProblem } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -49,10 +49,23 @@ if (!configRel.endsWith('.json')) {
     'Codex uses TOML: scaffold with --config .mcp.json and add the [mcp_servers.…] block by hand.');
 }
 
-const dirRel = flag('--dir') ?? path.join('tools', `${name}-mcp`);
-const serverRel = path.join(dirRel, 'server.mjs');
-const serverAbs = path.join(root, serverRel);
-const configAbs = path.join(root, configRel);
+/**
+ * ONE absolute path per thing, derived once.
+ *
+ * The containment check used `path.resolve(root, rel)` and the write used
+ * `path.join(root, rel)`. Those agree only while `rel` is relative: an ABSOLUTE
+ * `--dir` that lands inside the project passed the check and then wrote to a
+ * doubled path (`<root>/<root>/tools/…`), registered an absolute arg that does
+ * not exist, and printed four lines that were each false, exit 0. That is the
+ * round-1 fatal, alive under the fix that was supposed to close it — because
+ * the fix answered «is it inside?» with a different function than the one that
+ * decides where the bytes go.
+ */
+const dirAbs = path.resolve(root, flag('--dir') ?? path.join('tools', `${name}-mcp`));
+const serverAbs = path.join(dirAbs, 'server.mjs');
+const configAbs = path.resolve(root, configRel);
+const dirRel = path.relative(root, dirAbs);
+const serverRel = path.relative(root, serverAbs);
 
 /**
  * The scaffold must land INSIDE the project, because the path it registers is
@@ -81,7 +94,7 @@ const resolveReal = (rel) => {
   return path.join(realPath(probe), ...tail);
 };
 const rootReal = realPath(root);
-for (const [label, rel] of [['--dir', dirRel], ['--config', configRel]]) {
+for (const [label, rel] of [['--dir', dirAbs], ['--config', configAbs]]) {
   const abs = resolveReal(rel);
   if (abs !== rootReal && !abs.startsWith(rootReal + path.sep)) {
     die(`${label} must stay inside the project — «${rel}» really resolves to ${abs}`);
@@ -98,7 +111,16 @@ for (const [label, rel] of [['--dir', dirRel], ['--config', configRel]]) {
  * comments and an `inputs` block, so «registered» could mean «your entire MCP
  * config is gone», exit 0.
  */
-const configExists = fs.existsSync(configAbs);
+const configStat = (() => { try { return fs.statSync(configAbs); } catch { return null; } })();
+if (configStat?.isDirectory()) die(`--config «${configRel}» is a directory.`);
+// realpath resolves symlinks; a hardlink has no path to resolve, so the file
+// this rewrites can still live outside the project. Refuse rather than edit
+// somebody else's file under a name that looks local.
+if (configStat && configStat.nlink > 1) {
+  die(`${configRel} has ${configStat.nlink} links — the same file exists elsewhere on disk.\n` +
+    'Refusing: writing «inside the project» would rewrite that file too.');
+}
+const configExists = Boolean(configStat);
 let config = null;
 if (configExists) {
   const raw = fs.readFileSync(configAbs, 'utf8');
@@ -114,7 +136,15 @@ if (configExists) {
  *  from existing content registered a fresh `.vscode/mcp.json` under
  *  `mcpServers` — the one key VS Code does not read. */
 const key = /[/\\]?\.vscode[/\\]/.test(configRel) ? 'servers' : (config?.servers ? 'servers' : 'mcpServers');
-if (config?.[key]?.[name]) {
+const mapProblem = serverMapProblem(config?.[key]);
+if (mapProblem) {
+  die(`${configRel} has «${key}» as ${mapProblem}, not an object of servers.\n` +
+    'Refusing: setting a named property on that either vanishes when it is written back, or throws.');
+}
+// hasOwn, not truthiness: «constructor» passes the name regex and inherits from
+// Object.prototype, so it was reported as already registered in a config that
+// had never heard of it.
+if (config?.[key] && Object.hasOwn(config[key], name)) {
   die(`«${name}» is already registered in ${configRel} — extend that server instead of adding a second one.`);
 }
 /** Written before the server file exists, so a failure here does not leave a
@@ -259,7 +289,27 @@ try {
 
 /** Register it where the harness reads. Only this file is touched, and only its
  *  server map: a config carrying other settings keeps them. */
-const next = config ?? {};
+/**
+ * Read-modify-write on a shared file, so it takes a lock.
+ *
+ * Two agents scaffolding at once lost a registration in 2 runs of 3 while BOTH
+ * printed «registered» and exited 0 — and «unattended agents arming
+ * themselves» is this skill's own pitch. `mkdir` is the lock because it is
+ * atomic everywhere. ponytail: no staleness timeout; a crash leaves the
+ * directory and the message below says to delete it.
+ */
+const lockDir = path.join(root, '.mcp-lock');
+let locked = false;
+for (let i = 0; i < 50 && !locked; i++) {
+  try { fs.mkdirSync(lockDir); locked = true; } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); }
+}
+if (!locked) die(`another process is holding ${path.relative(root, lockDir)} — if nothing else is running, delete it.`);
+const release = () => { try { fs.rmdirSync(lockDir); } catch { /* already gone */ } };
+process.on('exit', release);
+
+// Re-read under the lock: the copy above was taken before anyone was excluded.
+const fresh = configExists ? (() => { try { return JSON.parse(fs.readFileSync(configAbs, 'utf8')); } catch { return config; } })() : config;
+const next = fresh ?? {};
 next[key] = next[key] ?? {};
 next[key][name] = { type: 'stdio', command: 'node', args: [serverRel] };
 try {
