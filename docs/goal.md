@@ -30,10 +30,10 @@ fatal or major finding in the same area two rounds running.
 
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
-| 1 | Reach: the loop inventories MCP servers/plugins, climbs the capability ladder, and writes the server it lacks — usable in the session that wrote it | `npm run verify`; no fatal or major reproduced in this area for **two** rounds | no — round 1 found 3 fatal here, all fixed; round 2 is in flight | `6424dc9` + `c4f0631`; `docs/reviews/2026-08-13.md` (F5, F6, and the major list) |
+| 1 | Reach: the loop inventories MCP servers/plugins, climbs the capability ladder, and writes the server it lacks — usable in the session that wrote it | `npm run verify`; **no fatal in the same AREA two rounds running** (areas defined in the review file) | **no** — `new-mcp` carried 2 fatal in R1 and 1 in R2, so the rule fails; `prove` and `ledger` fail it too. Round 3 is scoped to exactly those three areas | `docs/reviews/2026-08-13.md` § What the stopping rule now says |
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
-| 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | run the drill with a fresh read-only subagent; **the orchestrator records the verdict**, because the drill agent cannot write | partly — «resumable enough to start, not resumable enough to close»; its seven findings are fixed, the re-drill is pending | `docs/reviews/2026-08-13.md` § Cold-start drill |
+| 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | run the drill with a fresh read-only subagent; **the orchestrator records the verdict**, because the drill agent cannot write | partly — drill 1 «start but not close» (7 findings, all fixed); drill 2 confirmed all seven fixed and raised 7 more, now fixed. Drill 3 pending | `docs/reviews/2026-08-13.md` §§ Cold-start drill, Cold-start drill 2 |
 | 5 | Verification is not self-service and not same-model-only: the skeptic can be a different model, named with commands that exist here | `command -v` for each named tool; one claim actually refereed by it | yes | `codex exec --sandbox read-only` refuted the central claim about `prove.mjs` with 5 invocations, 3 of them missed by four same-model reviewers — `docs/reviews/2026-08-13.md` § Round 2; doctrine in `references/critics.md` |
 | 6 | The cost of a configured MCP server is measured, or the choice not to measure it is recorded with its cost | an entry in `decisions.md` naming what stays unmeasured and why | yes | `decisions.md`, «Not built: `tools.mjs --cost`» — and a landed test refuses that flag, so «measured» cannot be a typo |
 
@@ -41,15 +41,16 @@ fatal or major finding in the same area two rounds running.
 
 | what | both options, and their costs |
 |---|---|
-| **Arming the carrier** | `carrier.mjs` prints a launchd/cron/GitHub unit and installs nothing, by decision: arming a scheduled agent spends money unattended. So criterion 2 is met in the «proven it works» sense, not «it is running». To arm it the owner runs the printed `launchctl bootstrap` (or commits the workflow). Cost of arming: one agent invocation every interval, forever, until `docs/STOP`. Cost of not arming: the loop lives only as long as a session. **The loop did not choose, and must not.** |
+| **Arming the carrier** | `carrier.mjs` prints a launchd/cron/GitHub unit and installs nothing, by decision: arming a scheduled agent spends money unattended. So criterion 2 is met in the «proven it works» sense, not «it is running». To arm it the owner runs the printed `launchctl bootstrap` (or commits the workflow). **Cost of arming, stated: the default interval is 30 minutes → 48 agent invocations a day, indefinitely, until a `STOP` file exists.** Pick a longer `--every` for less. Cost of not arming: the loop lives only as long as a session. **The loop did not choose, and must not.** |
 
 ## Review rounds
 
 | round | reviewers | fatal | major | minor | outcome |
 |---|---|---:|---:|---:|---|
 | 1 | guard-can-fire · reachability · honesty auditor · cold-start drill — all read-only, all Opus | 6 | 11 | 10 | every fatal reproduced against a running script; all fixed and pinned before landing (`docs/reviews/2026-08-13.md`) |
-| 2 | cross-model referee (`codex exec --sandbox read-only`) | 0 | 1 (a guard that refused honest checks and missed dishonest ones) | 0 | refuted the central claim; the fix DELETED the useless half of the guard |
-| 2 | re-review of the fixes (same-model, read-only) | in flight | | | fixes are where self-inflicted defects live |
+| 2 | cross-model referee (`codex exec --sandbox read-only`) | 0 | 1 | 0 | refuted the central claim; the fix DELETED the useless half of the guard |
+| 2 | re-review of the fixes · cold-start drill 2 — same-model, read-only | 4 | 6 | 2 | every fatal was in round 1's own repairs; all fixed and pinned (78 tests) |
+| 3 | **owed**: `prove`, `ledger`, `new-mcp` — the three areas that carry a fatal in two consecutive rounds | | | | scoped by §7; §3 says a third round means the change was too big, and it was |
 
 ## Iteration log
 
@@ -65,3 +66,9 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 0 · 2026-08-13T14:51:14Z
 - **I5** — the cross-model referee's five cases: three shell forms that exited 0
   on a failing check, two honest checks that were refused. The guard shrank.
+- **prove** `npm run verify` → 0 · 2026-08-14T07:43:44Z
+- **I5** — the cross-model referee's five cases. `2407e38`.
+- **I6** — round 2's four fatals, all inside round 1's fixes: `hiddenPipe` past three
+  routes, the carrier's single baked STOP path, the `$HOME` escape, symlink
+  containment. Plus six majors and `--note`. 78 tests. Landed at `d2ab924`+1.
+- **prove** `npm run verify` → 0 — I6 round-2 fixes: 4 fatal, 6 major, 78 tests · 2026-08-14T07:45:40Z

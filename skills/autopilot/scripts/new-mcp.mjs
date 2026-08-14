@@ -22,6 +22,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { realPath } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -60,9 +61,31 @@ const configAbs = path.join(root, configRel);
  * `/opt/ae/server.mjs`, and printed three lines that were each false while
  * exiting 0 — a server that can never start.
  */
+/**
+ * Containment has to be checked on the REAL path, not the lexical one.
+ * `path.resolve` + `startsWith` refuses `--dir tools/../../x` and happily
+ * accepts `--dir tools/thing` when `tools` is a symlink pointing out of the
+ * project — which wrote the scaffold outside it and, through a symlinked
+ * `.mcp.json`, rewrote a config file elsewhere on disk, exit 0. `lib.mjs`
+ * documents this exact lesson about symlinks; it was not applied here.
+ */
+const resolveReal = (rel) => {
+  let probe = path.resolve(root, rel);
+  const tail = [];
+  while (!fs.existsSync(probe)) {
+    tail.unshift(path.basename(probe));
+    const up = path.dirname(probe);
+    if (up === probe) break;
+    probe = up;
+  }
+  return path.join(realPath(probe), ...tail);
+};
+const rootReal = realPath(root);
 for (const [label, rel] of [['--dir', dirRel], ['--config', configRel]]) {
-  const abs = path.resolve(root, rel);
-  if (!abs.startsWith(root + path.sep)) die(`${label} must stay inside the project — «${rel}» resolves to ${abs}`);
+  const abs = resolveReal(rel);
+  if (abs !== rootReal && !abs.startsWith(rootReal + path.sep)) {
+    die(`${label} must stay inside the project — «${rel}» really resolves to ${abs}`);
+  }
 }
 
 /**
@@ -239,7 +262,17 @@ try {
 const next = config ?? {};
 next[key] = next[key] ?? {};
 next[key][name] = { type: 'stdio', command: 'node', args: [serverRel] };
-fs.writeFileSync(configAbs, JSON.stringify(next, null, 2) + '\n');
+try {
+  fs.writeFileSync(configAbs, JSON.stringify(next, null, 2) + '\n');
+} catch (err) {
+  // The scaffold exists by now. Leaving it there turns a transient EACCES into
+  // a dead end: the retry refuses with «already exists — not overwriting», and
+  // the only way forward is deleting a file you were just told never to
+  // overwrite. Take it back out, so a retry is a retry.
+  try { fs.rmSync(serverAbs); fs.rmdirSync(path.dirname(serverAbs)); } catch { /* leave what we cannot remove */ }
+  die(`could not write ${configRel}: ${err.code ?? err.message}\n` +
+    `The scaffold was removed, so fixing that and running this again works.`);
+}
 
 console.log(`created   : ${serverRel}`);
 console.log(`registered: ${configRel}  (server «${name}», path relative to the project root)`);

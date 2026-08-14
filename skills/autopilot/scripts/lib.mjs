@@ -81,14 +81,27 @@ const present = (p) => { try { fs.lstatSync(p); return true; } catch { return fa
  * nothing walked up. Bounded by `.git`, by $HOME and by twelve levels, so it
  * can never wander into a ledger that belongs to something else.
  */
+/** The path as the filesystem really sees it. On macOS `/var` is a symlink to
+ *  `/private/var`, so a home under a temp dir compares unequal to `os.homedir()`
+ *  and the boundary below never fires — caught by re-running the reviewer's
+ *  reproduction after «fixing» it. */
+export const realPath = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+
 function projectDirs(start) {
   const dirs = [];
-  let dir = path.resolve(start);
+  const home = realPath(os.homedir());
+  let dir = realPath(start);
   for (let i = 0; i < 12; i++) {
+    // $HOME is the boundary and is NEVER scanned. It used to be pushed before
+    // the break, and `notes` is one of the ledger homes — so a project with no
+    // `.git` under the home directory elected `~/notes/goal.md`, and the loop
+    // appended its results to the owner's personal file. Reproduced by a
+    // reviewer; it is the exact defect the comment above claims to prevent.
+    if (dir === home) break;
     dirs.push(dir);
     if (hasExactly(dir, '.git')) break;
     const up = path.dirname(dir);
-    if (up === dir || dir === os.homedir()) break;
+    if (up === dir) break;
     dir = up;
   }
   return dirs;
@@ -154,4 +167,15 @@ export function findExisting(root, ...stems) {
   };
   for (const r of LEDGER_ROOTS) scan(r, 1);
   return out;
+}
+
+/** The nearest `name` at or above `start`, within the project boundary — the
+ *  same walk the ledger uses. `npm` walks up to find package.json and the
+ *  runner did not, so the same file with the same pipe, run one directory
+ *  down, was reported green. */
+export function findUp(start, name) {
+  for (const dir of projectDirs(start)) {
+    if (hasExactly(dir, name)) return path.join(dir, name);
+  }
+  return null;
 }

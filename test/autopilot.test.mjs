@@ -621,6 +621,116 @@ test('an unknown flag to tools.mjs is an error — «--cost» must not read as m
 });
 
 /**
+ * Round 2 — what a re-review of the FIXES reproduced.
+ *
+ * «After fixing what review found, review again» is in the skill because fixes
+ * are where self-inflicted defects live. That round found four more fatals, in
+ * the previous round's repairs. Every one of them is below.
+ */
+
+test('the pipe is found through delegation, a lifecycle script, and from a subdirectory', () => {
+  // Three ways past the single-key version, each a sibling key in the very
+  // package.json the guard had already parsed — or that file one level up,
+  // which npm walks to and the runner did not.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'src'));
+  for (const [pkg, cwd] of [
+    ['{"scripts":{"verify":"npm run inner","inner":"false | cat"}}', d],
+    ['{"scripts":{"preverify":"false | cat","verify":"true"}}', d],
+    ['{"scripts":{"verify":"false | cat"}}', path.join(d, 'src')],
+  ]) {
+    fs.writeFileSync(path.join(d, 'package.json'), pkg);
+    assert.throws(() => prove(cwd, ['--', 'npm', 'run', 'verify']), /the check itself is piped/, pkg);
+  }
+});
+
+test('the walk-up stops BELOW $HOME — the loop never writes into a personal file', () => {
+  // `notes` is a ledger home. $HOME was pushed before the boundary check, so a
+  // project without .git under the home directory elected ~/notes/goal.md and
+  // appended the run's result to the owner's file.
+  const home = tmp();
+  fs.mkdirSync(path.join(home, 'notes'));
+  const personal = path.join(home, 'notes', 'goal.md');
+  const body = '# MY PERSONAL GOALS\n- learn guitar\n';
+  fs.writeFileSync(personal, body);
+  const project = path.join(home, 'scratch', 'thing');
+  fs.mkdirSync(project, { recursive: true });
+  let status = 0;
+  try {
+    execFileSync('node', [path.join(SCRIPTS, 'prove.mjs'), '--record', '--', 'true'],
+      { cwd: project, encoding: 'utf8', env: { ...process.env, HOME: home } });
+  } catch (err) { status = err.status; }
+  assert.equal(status, 2, 'it adopted a ledger it does not own');
+  assert.equal(fs.readFileSync(personal, 'utf8'), body);
+});
+
+test('containment is checked on the REAL path — a symlink is not an escape hatch', () => {
+  const d = tmp();
+  const outside = tmp();
+  const proj = path.join(d, 'proj');
+  fs.mkdirSync(proj);
+  fs.symlinkSync(outside, path.join(proj, 'tools'));
+  const desc = 'drives a thing through its own cli, long enough to pass';
+  assert.throws(() => run('new-mcp.mjs', proj, ['thing', '-d', desc, '--dir', 'tools/thing-mcp']), /must stay inside the project/);
+  assert.deepEqual(fs.readdirSync(outside), [], 'it wrote outside the project');
+
+  const proj2 = path.join(d, 'proj2');
+  fs.mkdirSync(proj2);
+  const real = path.join(d, 'REAL-CONFIG.json');
+  const cfg = '{"importantOtherSettings":{"keep":"me"},"mcpServers":{}}\n';
+  fs.writeFileSync(real, cfg);
+  fs.symlinkSync(real, path.join(proj2, '.mcp.json'));
+  assert.throws(() => run('new-mcp.mjs', proj2, ['thing', '-d', desc]), /must stay inside the project/);
+  assert.equal(fs.readFileSync(real, 'utf8'), cfg, 'a file outside the project was rewritten');
+});
+
+test('a failed registration leaves no scaffold, so the retry is a retry', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, '.mcp.json'), '{"mcpServers":{"existing":{"command":"node"}}}\n', { mode: 0o444 });
+  const desc = 'drives a thing through its own cli, long enough to pass';
+  assert.throws(() => run('new-mcp.mjs', d, ['thing', '-d', desc]), /could not write/);
+  assert.equal(fs.existsSync(path.join(d, 'tools', 'thing-mcp', 'server.mjs')), false, 'a half-built scaffold survived');
+  fs.chmodSync(path.join(d, '.mcp.json'), 0o644);
+  run('new-mcp.mjs', d, ['thing', '-d', desc]);
+  const cfg = JSON.parse(fs.readFileSync(path.join(d, '.mcp.json'), 'utf8'));
+  assert.ok(cfg.mcpServers.thing && cfg.mcpServers.existing, 'the retry lost the existing server');
+});
+
+test('a bad server map in ~/.claude.json is UNKNOWN, never invented servers', () => {
+  // The guarded reader and the unguarded one disagreed: an array there became
+  // servers named 0 and 1, a string one per character, and `unreadable: []`.
+  const home = tmp();
+  fs.writeFileSync(path.join(home, '.claude.json'), '{"mcpServers":["alpha","beta"]}');
+  const out = JSON.parse(execFileSync('node', [path.join(SCRIPTS, 'tools.mjs'), '--json'],
+    { cwd: tmp(), encoding: 'utf8', env: { ...process.env, HOME: home } }));
+  assert.deepEqual(out.servers.map((s) => s.name), []);
+  assert.match(JSON.stringify(out.unreadable), /array/);
+});
+
+test('a large inventory survives the pipe — the same fatal, in a sibling script', () => {
+  const d = tmp();
+  const servers = Object.fromEntries(Array.from({ length: 1500 }, (_, i) => [`server-${i}`, { command: 'node', args: ['x.mjs'] }]));
+  fs.writeFileSync(path.join(d, '.mcp.json'), JSON.stringify({ mcpServers: servers }));
+  const out = execFileSync('node', [path.join(SCRIPTS, 'tools.mjs'), '--json'],
+    { cwd: d, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, env: { ...process.env, HOME: tmp() } });
+  assert.ok(out.length > 65536, `truncated to ${out.length}`);
+  assert.equal(JSON.parse(out).servers.length, 1500, 'the JSON did not survive the pipe');
+});
+
+test('bootstrap says so when the state file cannot be created under its own name', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'GOAL.md'), '# my own goals\n');
+  assert.match(run('bootstrap.mjs', d), /must be named exactly/);
+});
+
+test('bootstrap names the ledgers already deeper in the tree', () => {
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'packages', 'api'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'packages', 'api', 'goal.md'), '# theirs\n');
+  assert.match(run('bootstrap.mjs', d), /already exists deeper in this tree/);
+});
+
+/**
  * The carrier — what runs the loop when the window is closed.
  *
  * These execute the emitted wrapper rather than reading it. The first version
@@ -656,6 +766,20 @@ test('STOP halts the carrier too — otherwise stopping the loop leaves a daemon
   execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
   assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'the agent ran with STOP present');
   assert.equal(fs.existsSync(path.join(d, '.carrier.lock')), false, 'the lock leaked');
+});
+
+test('the carrier honours every STOP path the loop does, not one baked-in string', () => {
+  // It baked ONE literal path into a daemon while prove.mjs accepts nine. A
+  // reviewer wrote STOP at the project root, watched the loop stop, and watched
+  // the carrier keep invoking the agent — under a banner saying «the same file».
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'docs'));
+  run('bootstrap.mjs', d); // elects docs/
+  fs.writeFileSync(path.join(d, 'STOP'), 'halt\n'); // the human writes it at the root
+  assert.equal(proveStatus(d, ['--', 'true']), 250, 'the loop did not stop');
+  const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'the carrier ran on regardless');
 });
 
 test('a run that overlaps the previous one does nothing — two loops share one ledger', () => {

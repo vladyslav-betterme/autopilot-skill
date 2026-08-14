@@ -21,7 +21,7 @@
  * Prints to stdout. Writes nothing, installs nothing, needs no dependencies.
  */
 import path from 'node:path';
-import { findLedgerHomes, STOP_FILE } from './lib.mjs';
+import { findLedgerHomes, LEDGER_HOMES, STOP_FILE } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -58,7 +58,17 @@ if (ledgers.length > 1) {
     `${ledgers.map((l) => `  ${path.relative(root, l) || '.'}`).join('\n')}\n` +
     'Keep one, or run this from the directory that owns the ledger.');
 }
-const stopPath = ledgers.length ? path.join(path.relative(root, ledgers[0]), STOP_FILE) : STOP_FILE;
+/**
+ * The carrier must watch EVERY path the loop's own stop honours, not one.
+ *
+ * It baked a single literal path into a daemon while `prove.mjs` accepts nine.
+ * A reviewer wrote `STOP` at the project root — exactly where SKILL.md says it
+ * may go — and watched the loop stop while the carrier went on invoking the
+ * agent every interval, forever, under a banner reading «the same file that
+ * stops the loop». It was not the same file.
+ */
+const stopPaths = LEDGER_HOMES.map((h) => path.join(h, STOP_FILE));
+const stopPath = ledgers.length ? path.join(path.relative(root, ledgers[0]) || '.', STOP_FILE) : STOP_FILE;
 const logDir = 'agent-logs';
 
 /**
@@ -78,7 +88,7 @@ const logDir = 'agent-logs';
  */
 const wrapper = [
   `cd ${JSON.stringify(root)} || exit 1`,
-  `[ -e ${JSON.stringify(stopPath)} ] && exit 0`,
+  `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do [ -e "$s" ] && exit 0; done`,
   `mkdir .carrier.lock 2>/dev/null || exit 0`,
   `trap 'rmdir .carrier.lock' EXIT`,
   `mkdir -p ${logDir}`,
@@ -136,7 +146,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - name: stop file halts the carrier too
-        run: '[ -e ${stopPath} ] && exit 0 || true'
+        run: 'for s in ${stopPaths.join(' ')}; do [ -e "$s" ] && exit 0; done; true'
       - name: one iteration
         env:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
@@ -167,8 +177,9 @@ console.error(`\n# ── not installed ─────────────�
 # To arm it:
 ${install}
 #
-# It halts on ${stopPath} — the same file that stops the loop, so stopping the
-# conversation does not leave a daemon iterating without it.
+# It halts on ANY of: ${stopPaths.join(' ')}
+# — the same set prove.mjs honours, so stopping the loop cannot leave a daemon
+# iterating without it. (${stopPath} is the one this project's ledger implies.)
 # If a run crashes, .carrier.lock is left behind and every later run exits 0
 # doing nothing: delete the directory to resume.
 # Logs: ${path.join(logDir, 'carrier.log')} — read it after the first fire, or you have

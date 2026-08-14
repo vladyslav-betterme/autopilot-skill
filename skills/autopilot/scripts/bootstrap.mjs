@@ -21,7 +21,31 @@ const home = LEDGER_HOMES.find((p) => statKind(path.join(root, p)) === 'dir') ??
  *  the name is not the knowledge. One scanner, shared with discovery. */
 const findExisting = (...stems) => scanFor(root, ...stems);
 
+/** The loop's STATE file has one name. `findExisting` matches synonyms and
+ *  case-insensitively — right for «do not plant a second changelog», wrong as a
+ *  silent skip here, because the runner needs the exact name `goal.md`. A
+ *  project with its own `GOAL.md` used to get «left alone» and then an endless
+ *  «no goal.md — run bootstrap.mjs first» from every check. */
+const EXISTING_GOALISH = findExisting('goal', 'objective')[0];
 const EXISTING_CHANGELOG = findExisting('changelog')[0];
+
+/** Other `goal.md` files further down — a monorepo already carrying one per
+ *  package got a third at the root, silently, from the script whose stated one
+ *  job is not creating a second home for knowledge that already has one. */
+function deepGoals(rel = '.', depth = 3) {
+  const out = [];
+  if (depth < 0) return out;
+  let entries = [];
+  try { entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+    const child = path.join(rel, e.name);
+    if (e.isDirectory()) out.push(...deepGoals(child, depth - 1));
+    else if (e.name === 'goal.md') out.push(child);
+  }
+  return out;
+}
+const OTHER_GOALS = deepGoals().filter((p) => path.dirname(p) !== home && path.dirname(p) !== '.');
 const EXISTING_BACKLOG = findExisting('todo', 'roadmap', 'backlog')[0];
 
 const FILES = [
@@ -167,6 +191,15 @@ for (const f of FILES) {
 }
 
 console.log(`ledger home: ${home}`);
+if (EXISTING_GOALISH && path.basename(EXISTING_GOALISH) !== 'goal.md') {
+  console.log(`ATTENTION : this project already has ${EXISTING_GOALISH}, so no goal.md was created —`);
+  console.log(`            but the loop's state file must be named exactly «goal.md». Until one exists,`);
+  console.log(`            every check will refuse with «no goal.md». Rename it, or add a goal.md beside it.`);
+}
+if (OTHER_GOALS.length) {
+  console.log(`ATTENTION : goal.md already exists deeper in this tree: ${OTHER_GOALS.join(', ')}`);
+  console.log(`            If those are the real ledgers, run the loop from there instead of here.`);
+}
 if (wrote.length) console.log(`created    : ${wrote.join(', ')}`);
 if (skipped.length) console.log(`left alone : ${skipped.join(', ')} — this project already has one`);
 if (EXISTING_CHANGELOG) console.log(`changelog  : append to the existing ${EXISTING_CHANGELOG}`);

@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { findLedgerHomes, findStopFile, STOP_FILE } from './lib.mjs';
+import { findLedgerHomes, findStopFile, findUp, STOP_FILE } from './lib.mjs';
 
 const STOPPED = 250;
 const FLAKY = 251;
@@ -33,7 +33,7 @@ const sep = argv.indexOf('--');
 const die = (msg, code = 2) => { console.error(msg); process.exit(code); };
 
 if (sep === -1 || sep === argv.length - 1) {
-  die('usage: prove.mjs [--times N] [--record] -- <command> [args…]\n' +
+  die('usage: prove.mjs [--times N] [--record] [--note "what this proves"] -- <command> [args…]\n' +
     'The «--» is required: everything after it is the check, run exactly as given.');
 }
 const cmd = argv.slice(sep + 1);
@@ -48,6 +48,7 @@ const cmd = argv.slice(sep + 1);
  */
 let record = false;
 let times = 1;
+let note = null;
 for (let i = 0; i < sep; i++) {
   const [name, inline] = argv[i].includes('=')
     ? [argv[i].slice(0, argv[i].indexOf('=')), argv[i].slice(argv[i].indexOf('=') + 1)]
@@ -55,13 +56,19 @@ for (let i = 0; i < sep; i++) {
   if (name === '--record') {
     if (inline !== null) die('--record takes no value');
     record = true;
+  } else if (name === '--note') {
+    // Five identical `→ 0` lines cannot be told from a loop that is stuck: a
+    // cold-start drill read the log and said a loop making progress and a loop
+    // spinning look exactly the same. The note is what makes them differ.
+    note = inline ?? argv[++i];
+    if (!note) die('--note wants text — what this run is evidence FOR');
   } else if (name === '--times') {
     const raw = inline ?? argv[++i];
     // /^\d+$/ and not Number(): `0x10` ran sixteen times and `1e3` ran a thousand.
     if (!/^\d+$/.test(raw ?? '') || Number(raw) < 1) die(`--times wants a positive whole number, got «${raw}»`);
     times = Number(raw);
   } else {
-    die(`unknown flag «${argv[i]}» — the flags are --times N and --record.\n` +
+    die(`unknown flag «${argv[i]}» — the flags are --times N, --record and --note "text".\n` +
       'Refusing rather than ignoring it: a silently dropped --record reads exactly like a run with nothing to record.');
   }
 }
@@ -122,12 +129,33 @@ const RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 function hiddenPipe() {
   if (!RUNNERS.has(path.basename(cmd[0] ?? ''))) return null;
   const rest = cmd.slice(1).filter((a) => !a.startsWith('-'));
-  const script = rest[0] === 'run' || rest[0] === 'run-script' ? rest[1] : rest[0];
-  if (!script) return null;
+  const entry = rest[0] === 'run' || rest[0] === 'run-script' ? rest[1] : rest[0];
+  if (!entry) return null;
+  // From CWD UP, because npm does: the same package.json with the same pipe,
+  // run one directory down, used to be reported green.
+  const pkgPath = findUp(root, 'package.json');
   let pkg;
-  try { pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); } catch { return null; }
-  const body = pkg?.scripts?.[script];
-  return typeof body === 'string' && body.includes('|') ? { script, body } : null;
+  try { pkg = JSON.parse(fs.readFileSync(pkgPath ?? '', 'utf8')); } catch { return null; }
+  const scripts = pkg?.scripts;
+  if (!scripts) return null;
+  // Follow the graph, not the one key. A reviewer walked past the single-key
+  // version three ways: `"verify": "npm run inner"` with the pipe in `inner`,
+  // a `preverify` lifecycle script, and the walk-up above — each of them a
+  // sibling key in the very file this function had already parsed.
+  const seen = new Set();
+  const queue = [entry];
+  while (queue.length) {
+    const name = queue.shift();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    for (const key of [`pre${name}`, name, `post${name}`]) {
+      const body = scripts[key];
+      if (typeof body !== 'string') continue;
+      if (COMPOUND.test(body)) return { script: key, body };
+      for (const m of body.matchAll(/\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+|run-script\s+)?([\w:.-]+)/g)) queue.push(m[1]);
+    }
+  }
+  return null;
 }
 const piped = hiddenPipe();
 if (piped) {
@@ -185,7 +213,8 @@ const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const agreed = new Set(codes).size === 1;
 const passed = agreed && codes[0] === 0;
 const line = `- **prove** \`${cmd.map(quote).join(' ')}\` → ${codes.join(', ')}` +
-  `${agreed ? '' : '  ← DISAGREED WITH ITSELF'}${times > 1 ? ` (${times} runs)` : ''} · ${stamp}`;
+  `${agreed ? '' : '  ← DISAGREED WITH ITSELF'}${times > 1 ? ` (${times} runs)` : ''}` +
+  `${note ? ` — ${note}` : ''} · ${stamp}`;
 
 console.log(`\n${line}`);
 

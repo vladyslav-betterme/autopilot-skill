@@ -105,18 +105,28 @@ const add = (name, entry, source, scope) => {
   servers.push({ name, transport, how, sources: [source], scope });
 };
 
+/**
+ * ONE entry point, because the guarded and unguarded readers disagreed.
+ *
+ * The `.mcp.json` loop checked the map's shape; the `~/.claude.json` reader did
+ * not — so an array there became servers named `0` and `1`, and a string became
+ * one server per character, with `unreadable: []`. Not swallowed into silence:
+ * converted into a false PRESENCE, which is worse than the absence this script
+ * was written to stop.
+ */
+const addAll = (map, abs, source, scope) => {
+  if (map === undefined || map === null) return;
+  if (typeof map !== 'object' || Array.isArray(map)) {
+    unreadable.push({ file: abs, why: `the server map is ${Array.isArray(map) ? 'an array' : typeof map}, not an object` });
+    return;
+  }
+  for (const [name, entry] of Object.entries(map)) add(name, entry, source, scope);
+};
+
 for (const { abs, scope } of JSON_SOURCES) {
   const cfg = readJson(abs);
   if (!cfg) continue;
-  const map = cfg.mcpServers ?? cfg.servers ?? cfg.mcp;
-  if (map === undefined) continue;
-  // An ARRAY passes `typeof === 'object'`, and Object.entries then names the
-  // servers `0` and `1` and drops their real names. That is invented data.
-  if (typeof map !== 'object' || map === null || Array.isArray(map)) {
-    unreadable.push({ file: abs, why: `the server map is ${Array.isArray(map) ? 'an array' : typeof map}, not an object` });
-    continue;
-  }
-  for (const [name, entry] of Object.entries(map)) add(name, entry, short(abs), scope);
+  addAll(cfg.mcpServers ?? cfg.servers ?? cfg.mcp, abs, short(abs), scope);
 }
 
 /**
@@ -125,14 +135,11 @@ for (const { abs, scope } of JSON_SOURCES) {
  * that gets forgotten, because nothing in the repository mentions it and a
  * teammate cloning the repo does not have it.
  */
-const claude = readJson(path.join(home, '.claude.json'));
-for (const [name, entry] of Object.entries(claude?.mcpServers ?? {})) {
-  add(name, entry, '~/.claude.json', 'user');
-}
+const claudeJson = path.join(home, '.claude.json');
+const claude = readJson(claudeJson);
+addAll(claude?.mcpServers, claudeJson, '~/.claude.json', 'user');
 const claudeProject = claude?.projects?.[root];
-for (const [name, entry] of Object.entries(claudeProject?.mcpServers ?? {})) {
-  add(name, entry, '~/.claude.json (this project only)', 'local');
-}
+addAll(claudeProject?.mcpServers, claudeJson, '~/.claude.json (this project only)', 'local');
 
 /** Codex is TOML. One regex for the header line is enough to NAME them, and
  *  naming them is the whole job here — this script never launches anything. */
@@ -144,8 +151,13 @@ for (const m of (codex ?? '').matchAll(/^\[mcp_servers\.("?)([^\]."]+)\1]/gm)) {
 /** Plugins can carry BOTH skills and MCP servers, so a plugin is a capability
  *  even when it appears in neither list above. */
 const plugins = [];
-const installed = readJson(path.join(home, '.claude', 'plugins', 'installed_plugins.json'));
-for (const [name, entries] of Object.entries(installed?.plugins ?? {})) {
+const pluginsJson = path.join(home, '.claude', 'plugins', 'installed_plugins.json');
+const installed = readJson(pluginsJson);
+const pluginMap = installed?.plugins;
+if (pluginMap !== undefined && (typeof pluginMap !== 'object' || pluginMap === null || Array.isArray(pluginMap))) {
+  unreadable.push({ file: pluginsJson, why: `the plugin map is ${Array.isArray(pluginMap) ? 'an array' : typeof pluginMap}, not an object` });
+}
+for (const [name, entries] of Object.entries(pluginMap && !Array.isArray(pluginMap) && typeof pluginMap === 'object' ? pluginMap : {})) {
   const e = Array.isArray(entries) ? entries[0] : entries;
   plugins.push({ name, scope: e?.scope ?? '?', version: e?.version ?? '?' });
 }
@@ -165,9 +177,12 @@ const blind = [
 ];
 
 if (json) {
+  // process.exitCode, never process.exit: on a pipe stdout is asynchronous, and
+  // a large inventory came back cut at exactly 65536 bytes, invalid JSON, exit
+  // 0. The same fatal was fixed in the generated server and left here.
   console.log(JSON.stringify({ root, servers, plugins, approval, unreadable, blind }, null, 2));
-  process.exit(0);
-}
+  process.exitCode = 0;
+} else {
 
 const w = Math.min(Math.max(...servers.map((s) => s.name.length), 4), 28);
 console.log(`\x1b[1mMCP servers configured\x1b[0m (${servers.length})`);
@@ -195,3 +210,4 @@ console.log('\n\x1b[1mWhat this cannot see\x1b[0m — check these in the session
 for (const b of blind) console.log(`  · ${b}`);
 console.log('\nBefore building a capability, walk the ladder in references/tooling.md:');
 console.log('  already reachable → the app\'s own CLI → a public MCP server → write one (new-mcp.mjs).');
+}

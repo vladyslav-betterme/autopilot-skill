@@ -1,17 +1,30 @@
 # Changelog
 
 What shipped, newest first. One line per landed change: what it does, and what
-was wrong before.
+was wrong before. **Newest first** — it read oldest-first once and a cold-start
+drill named the oldest change as the most recent thing that landed.
 
-- **prove.mjs** — the check is run by something that is not writing the summary.
+- **I6 · round 2's fixes** — `hiddenPipe` follows script delegation, pre/post
+  lifecycle scripts and walks up for `package.json`; the carrier watches every
+  `STOP` path instead of one; the ledger walk stops below `$HOME`; `new-mcp`
+  checks containment on the real path. Before: each of those reported success
+  while doing the wrong thing, and all four lived inside round 1's own fixes.
+- **I5 · the cross-model referee** (`2407e38`) — a compound shell check is
+  refused by what it does (`|`, `;`, `&`), and the token check on a non-shell
+  command is gone. Before: it refused honest checks and missed dishonest ones.
+- **I4 · the ledger repair** (`7975c3a`, `92dd603`, `7a4431c`, `448bcfb`) —
+  `docs/reviews/2026-08-13.md` so the council's numbers can be re-read; the
+  criteria stopped contradicting themselves; the capability ladder is written
+  once; the «execute what you emitted» rule was actually written down.
+- **I3 · round 1's fixes** (`c4f0631`) — 6 fatal and 11 major, every one
+  reproduced against a running script before it was touched.
+- **I2 · `carrier.mjs`** — emits the launchd / cron / GitHub unit that outlives
+  the session, and installs none of them. Before: the loop's only continuation
+  was a wakeup that dies with the window.
+- **I1 · `prove.mjs` and `STOP`** — the check is run by something that is not
+  writing the summary, and one file halts both the loop and the carrier.
   Before: «the check passed» was output pasted by the context that wanted it to
-  have passed, and `check | tail` exits 0 on a red check.
-- **carrier.mjs** — emits the launchd / cron / GitHub unit that outlives the
-  session, and installs none of them. Before: the loop's only continuation was a
-  wakeup that dies with the window.
-- **STOP** — one file halts the loop AND the carrier, searched from any
-  subdirectory up. Before: stopping meant killing the session, which left the
-  daemon iterating.
-- **tools.mjs / new-mcp.mjs / references/tooling.md** — the capability ladder,
-  the inventory across seven config files, and the scaffold that is also a CLI.
-  Before: arming was skills-only, so a missing capability read as a smaller goal.
+  have passed.
+- **I0 · reach** (`6424dc9`) — `tools.mjs`, `new-mcp.mjs`, the capability
+  ladder. Before: arming was skills-only, so a missing capability read as a
+  smaller goal.

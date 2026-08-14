@@ -416,7 +416,7 @@ start — and a loop that cannot survive a cold start is a conversation.
 
 **And it must be stoppable without killing it.** A `STOP` file in the ledger
 home (or the project root) halts the run at the next Prove step: `prove.mjs`
-exits `97` **without running the check**, prints whatever the file says, and the
+exits `250` **without running the check**, prints whatever the file says, and the
 iteration ends by writing state instead of landing half a change. Deleting the
 file resumes. The point is that stopping is a mechanism the human owns rather
 than a request the loop has to notice — the same reason the wakeup is scheduled
