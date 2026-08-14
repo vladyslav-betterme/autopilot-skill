@@ -91,3 +91,6 @@ fatal or major finding in the same area two rounds running.
 - **I9** — §8 is a checkpoint, not a stop: ledger, commit, compact, resume from
   the ledger. Conditioned out loud on the cold-start drill. `e90d7d8`.
 - **prove** `npm run verify` → 0 — I10 ledger: round 3 recorded · 2026-08-14T08:44:15Z
+- **I11** — the published install, run end to end: `npx skills add …` into a
+  clean project, then all ten documented commands, ten for ten. Nobody had run
+  the path the README's first line describes.
