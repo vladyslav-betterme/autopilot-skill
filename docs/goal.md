@@ -30,10 +30,10 @@ fatal or major finding in the same area two rounds running.
 
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
-| 1 | Reach: the loop inventories MCP servers/plugins, climbs the capability ladder, and writes the server it lacks — usable in the session that wrote it | `npm run verify`; **no fatal in the same AREA two rounds running** (areas defined in the review file) | **no** — `new-mcp` carried 2 fatal in R1 and 1 in R2, so the rule fails; `prove` and `ledger` fail it too. Round 3 is scoped to exactly those three areas | `docs/reviews/2026-08-13.md` § What the stopping rule now says |
+| 1 | Reach: the loop inventories MCP servers/plugins, climbs the capability ladder, and writes the server it lacks — usable in the session that wrote it | the §7 rule, which CHANGED after round 4: a differential oracle per guard · every emitted grammar executed by its real interpreter · two rounds adding zero new causes | **no** — 1 guard of ~6 has an oracle; the GitHub workflow is not parsed by any YAML reader; the zero-new-causes streak is 0 of 2 (round 4 added three) | `docs/reviews/2026-08-13.md` §§ Round 4, Convergence analysis |
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
-| 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | run the drill with a fresh read-only subagent; **the orchestrator records the verdict**, because the drill agent cannot write | partly — drill 1 «start but not close» (7 findings, all fixed); drill 2 confirmed all seven fixed and raised 7 more, now fixed. Drill 3 pending | `docs/reviews/2026-08-13.md` §§ Cold-start drill, Cold-start drill 2 |
+| 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | run the drill with a fresh read-only subagent; **the orchestrator records the verdict**, because the drill agent cannot write | partly — drills 1 and 2 both «start but not close», 14 findings between them, all fixed. Drill 3 is running against this version | `docs/reviews/2026-08-13.md` §§ Cold-start drill, Cold-start drill 2 |
 | 5 | Verification is not self-service and not same-model-only: the skeptic can be a different model, named with commands that exist here | `command -v` for each named tool; one claim actually refereed by it | yes | `codex exec --sandbox read-only` refuted the central claim about `prove.mjs` with 5 invocations, 3 of them missed by four same-model reviewers — `docs/reviews/2026-08-13.md` § Round 2; doctrine in `references/critics.md` |
 | 6 | The cost of a configured MCP server is measured, or the choice not to measure it is recorded with its cost | an entry in `decisions.md` naming what stays unmeasured and why | yes | `decisions.md`, «Not built: `tools.mjs --cost`» — and a landed test refuses that flag, so «measured» cannot be a typo |
 
@@ -51,7 +51,8 @@ fatal or major finding in the same area two rounds running.
 | 2 | cross-model referee (`codex exec --sandbox read-only`) | 0 | 1 | 0 | refuted the central claim; the fix DELETED the useless half of the guard |
 | 2 | re-review of the fixes · cold-start drill 2 — same-model, read-only | 4 | 6 | 2 | every fatal was in round 1's own repairs; all fixed and pinned (78 tests) |
 | 3 | one reviewer per owed area — `prove`, `ledger`, `new-mcp` | 5 | 6 | 3 | two were earlier fatals alive under their own fixes; all fixed and pinned (98 tests) |
-| 4 | **owed**: the same three, plus `loop.mjs` (new, unreviewed) | | | | nothing new is added until they come back clean — §3's «the change was too big», accepted |
+| 4 | prove · ledger+carrier · new-mcp · `loop.mjs` (first outside look) · convergence analyst | 9 | 8 | — | every fatal but `loop`'s was inside a previous round's fix; cron was CUT and §7 was replaced as a result |
+| 5 | the three scripts nobody has ever reviewed (`discover`, `skills`, `new-skill`) · a re-review of round 4's fixes · cold-start drill 3 | in flight | | | scoped by «the yield comes from whatever subsurface nobody looked at yet» |
 
 ## Iteration log
 
@@ -107,3 +108,9 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 0, 0 (2 runs) — cron cut, schedule kept · 2026-08-14T09:14:07Z
 - **prove** `npm run verify` → 0 — the stopping rule that can be satisfied · 2026-08-14T09:15:04Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R4 complete: cron cut, oracle, new stopping rule · 2026-08-14T09:16:34Z
+- **I12** — round 4's nine fatals, and what the count led to: `--kind cron` cut
+  (a grammar nothing in the check could execute), §7 replaced (the old rule was
+  lost 4 times of 4), and `test/prove-oracle.test.mjs` — a differential oracle
+  whose ground truth is `bash -o pipefail`. `eff9ae4`.
+- **prove** `npm run verify` → 0 — round 4 in the ledger · 2026-08-14T09:24:58Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — second oracle: printed claims vs disk · 2026-08-14T09:28:00Z
