@@ -38,8 +38,8 @@ const root = process.cwd();
 const argv = process.argv.slice(2);
 const die = (msg, code = 2) => { console.error(msg); process.exitCode = code; };
 
-const VALUE = new Set(['--agent', '--max', '--sleep', '--thrash']);
-const opts = { max: 25, sleep: 15, thrash: 2, agent: null, status: false };
+const VALUE = new Set(['--agent', '--max', '--sleep', '--thrash', '--timeout']);
+const opts = { max: 25, sleep: 15, thrash: 2, timeout: 45, agent: null, status: false };
 for (let i = 0; i < argv.length; i++) {
   const [name, inline] = argv[i].includes('=')
     ? [argv[i].slice(0, argv[i].indexOf('=')), argv[i].slice(argv[i].indexOf('=') + 1)]
@@ -47,7 +47,7 @@ for (let i = 0; i < argv.length; i++) {
   if (name === '--status') { opts.status = true; continue; }
   if (name === '--help' || name === '-h') { opts.agent = null; opts.status = false; break; }
   if (!VALUE.has(name)) {
-    die(`unknown flag «${argv[i]}» — --agent, --max, --sleep, --thrash, --status`);
+    die(`unknown flag «${argv[i]}» — --agent, --max, --sleep, --thrash, --timeout, --status`);
     process.exit(2);
   }
   const value = inline ?? argv[++i];
@@ -105,9 +105,11 @@ if (opts.status) {
     if (skippedRows) console.log(`${skippedRows} unreadable line(s) skipped — a run was killed mid-append.`);
   }
 } else if (!opts.agent) {
-  die('usage: loop.mjs --agent "<non-interactive agent command>" [--max 25] [--sleep 15] [--thrash 2]\n' +
+  die('usage: loop.mjs --agent "<non-interactive agent command>" [--max 25] [--sleep 15] [--thrash 2] [--timeout 45]\n' +
     'e.g.  --agent "claude -p \'continue the autopilot loop; read docs/goal.md first\'"\n' +
     'The command must be NON-INTERACTIVE: nobody is there to answer a prompt.\n' +
+    '--timeout is in MINUTES (45 by default, 0 to disable): an agent that never returns\n' +
+    'otherwise hangs the loop forever, and a real one took 22 minutes for one iteration.\n' +
     `See what past runs did with:  node ${(() => { const r = path.relative(process.cwd(), url.fileURLToPath(import.meta.url)); return r && !r.startsWith('../..') ? r : url.fileURLToPath(import.meta.url); })()} --status`);
 } else {
   await run();
@@ -255,17 +257,42 @@ async function run() {
     // `detached` gives the agent its own process group, so a signal can reach
     // every process a compound command started — not only the /bin/sh in front.
     child = spawn('/bin/sh', ['-c', opts.agent], { cwd: projectRoot, detached: true, stdio: [steer ? 'pipe' : 'inherit', 'inherit', 'inherit'] });
-    if (steer) { child.stdin.end(steer); }
+    if (steer) { child.stdin.end(steer); child.stdin.on('error', () => { /* the agent may not read stdin */ }); }
+
+    /**
+     * A heartbeat and a timeout, both learned from ONE real run.
+     *
+     * A real agent iteration took 22 minutes and printed nothing until it was
+     * done — `claude -p` buffers, and stdio is inherited — so the operator sees
+     * the start line and then a blank screen, unable to tell working from hung.
+     * And nothing bounded it: an agent that never returns hangs the loop
+     * forever, which for a paid unattended run is the worst shape there is.
+     * Six review rounds found neither; the first real run found both.
+     */
+    const beat = setInterval(() => {
+      const mins = Math.round((Date.now() - t0) / 60000);
+      console.error(`  … still running, ${mins} min (timeout at ${opts.timeout})`);
+    }, 60_000);
+    let timedOut = false;
+    const killer = opts.timeout > 0 ? setTimeout(() => {
+      timedOut = true;
+      console.error(`\n  ⏱ ${opts.timeout} min — killing this iteration's agent.`);
+      try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); }
+      setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* gone */ } }, 10_000).unref();
+    }, opts.timeout * 60_000) : null;
+
     const exit = await new Promise((resolve) => {
       child.on('error', (err) => resolve(`spawn failed: ${err.code ?? err.message}`));
       child.on('close', (code, signal) => resolve(signal ? 128 + (os.constants.signals[signal] ?? 15) : code));
     });
+    clearInterval(beat);
+    if (killer) clearTimeout(killer);
     child = null;
     const seconds = Math.round((Date.now() - t0) / 1000);
     const after = sig();
     const ledgerMoved = before.led !== after.led;
     const headMoved = Boolean(before.head) && before.head !== after.head;
-    append({ n, started, seconds, exit, ledgerMoved, headMoved });
+    append({ n, started, seconds, exit, ledgerMoved, headMoved, ...(timedOut ? { timedOut: true } : {}) });
     console.log(`  ${seconds}s · exit ${exit} · ${ledgerMoved ? 'ledger moved' : 'ledger UNCHANGED'} · ${headMoved ? 'commit landed' : 'no commit'}`);
 
     quiet = ledgerMoved || headMoved ? 0 : quiet + 1;

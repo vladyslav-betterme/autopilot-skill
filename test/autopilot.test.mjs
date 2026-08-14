@@ -1053,6 +1053,27 @@ test('a signal during the sleep gap does not buy another iteration', async () =>
     'a second agent was started after the signal');
 });
 
+test('an agent that never returns is killed, not waited on forever', async () => {
+  // Found by the FIRST real run, not by six review rounds: a real iteration took
+  // 22 minutes and printed nothing until it was done, and nothing bounded it.
+  // For a paid unattended loop, an agent that never returns is the worst shape
+  // there is — and the operator cannot tell it from one that is working.
+  const d = looped();
+  const { spawn } = await import('node:child_process');
+  const child = spawn('node', [path.join(SCRIPTS, 'loop.mjs'), '--agent', 'sleep 600',
+    '--max', '1', '--sleep', '0', '--timeout', '1'], { cwd: d, stdio: ['ignore', 'pipe', 'pipe'] });
+  let printed = '';
+  child.stderr.on('data', (b) => { printed += b; });
+  const code = await new Promise((r) => {
+    child.on('close', (c) => r(c));
+    setTimeout(() => { child.kill('SIGKILL'); r('SURVIVED'); }, 90_000);
+  });
+  assert.notEqual(code, 'SURVIVED', 'the timeout did not fire');
+  assert.match(printed, /still running, 1 min/, 'no sign of life while the agent ran');
+  assert.match(printed, /killing this iteration/);
+  assert.match(fs.readFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), 'utf8'), /"timedOut":true/);
+});
+
 test('a second signal kills an agent that ignores the first', async () => {
   const d = looped();
   const { spawn } = await import('node:child_process');

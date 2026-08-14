@@ -6,6 +6,13 @@ about to do it again.
 
 Count **per area**. A falling total hides one area getting worse.
 
+> **Every row carries the round that FIRST produced it, as a single `R<n>` tag
+> in the Trend column.** §7 counts «new rows per round», and a drill found the
+> column mixing single rounds, ranges and bare dates — so the number the
+> stopping rule rests on could not be recomputed from the file that claims to
+> own it. Count them with:
+> `grep -oE '\| R[0-9]+' docs/failures.md | sort | uniq -c`
+>
 > **This table is the ONE taxonomy.** §7's stopping rule counts «new causes per
 > round», and a cold-start drill found that number defined twice at different
 > granularity — 15 rows here against «9 distinct causes» in the review file —
@@ -23,29 +30,29 @@ inventing a direction.
 
 | Cause | R1 | Trend |
 |---|---:|---|
-| **A permissive parser accepts what it should refuse** — an unknown flag ignored, `--times=3` not matching `--times`, `--dir /opt/x`, a TOML path taking a JSON write | 5 | first round |
-| **An error swallowed into silence, which then reads as absence or success** — a config parse error into `null` and then over the file, an unreadable config as «no MCP here», a failed record throwing past the verdict | 4 | first round |
-| **A guard whose true-positive set is inputs that were already safe** — the shell-token check | 1 | first round |
-| **A scope taken from `cwd` when the thing being scoped is the project** — STOP invisible from a subdirectory | 1 | first round |
-| **Two lists answering one question** — election vs search for the ledger home | 1 | first round (this repo's most-repeated cause across its whole history) |
-| **A composed chain whose short-circuit swallows the payload** | 1 | first round |
-| **`process.exit` before stdout has drained** | 1 | first round |
-| **A discovered value hardcoded at the second call site** | 1 | first round |
+| **A permissive parser accepts what it should refuse** — an unknown flag ignored, `--times=3` not matching `--times`, `--dir /opt/x`, a TOML path taking a JSON write | 5 | R1 |
+| **An error swallowed into silence, which then reads as absence or success** — a config parse error into `null` and then over the file, an unreadable config as «no MCP here», a failed record throwing past the verdict | 4 | R1 |
+| **A guard whose true-positive set is inputs that were already safe** — the shell-token check | 1 | R1 |
+| **A scope taken from `cwd` when the thing being scoped is the project** — STOP invisible from a subdirectory | 1 | R1 |
+| **Two lists answering one question** — election vs search for the ledger home | 1 | R1 |
+| **A composed chain whose short-circuit swallows the payload** | 1 | R1 |
+| **`process.exit` before stdout has drained** | 1 | R1 |
+| **A discovered value hardcoded at the second call site** | 1 | R1 |
 | **A document stating as an invariant what was never checked** | 10 claims | first round — one written BY this campaign an hour after the rule against it; a tenth found by cold-start drill 4, in this campaign's own ledger again |
-| **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 — `path.resolve` checked, `path.join` wrote; `prove` walked up, the carrier did not |
-| **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 — the separator regex; replaced by a whitelist |
-| **The guard is beaten by the layer IN FRONT of it** | 3 | R2, R3, R4 — each round's fix was correct and the stage feeding it was forgeable |
-| **A grammar emitted for an interpreter the check cannot run** | 4 | R3, R4 — cron and YAML; the surface was CUT rather than fixed a fifth time |
-| **Writing the very syntax the comment warns about, into a comment** | 2 | 2026-08-13 and 2026-08-14, same file: a cron step ends a block comment |
-| **A commit whose message describes work the commit does not contain** | 1 | 2026-08-14 — `git add` aborted on a path the rename had already staged, and the commit had only that rename left |
-| **A check invented from a file merely being present** | 5 | R5 — a Gemfile, a `tests/` directory, a `deno.json` holding a formatter width, a regex over a Makefile |
-| **A name believed instead of the behaviour behind it** | 3 | R5 — `check` assumed to be the aggregate, `test` matched inside a path, `---` assumed to be frontmatter |
-| **A half-finished artifact left by an unhappy path, which then blocks its own retry** | 3 | new-mcp R2 and R3, new-skill R5 |
-| **A guard that judges a LAYER and not the thing** | 6 | R5 — a shell in front of the runner, a runner inside the shell's script, a flag between the runner and the script name |
-| **A test that depends on a platform value it never names** | 2 | 2026-08-13 and 08-14, both green on macOS and red in CI: the carrier's `--kind` default follows the platform |
-| **The tool's own printed instruction does not work** | 7 | R6 — a usage line offering a deleted flag, a `<skill>` placeholder in a terminal, a hint that fails from the directory the skill says to run in, «read /goal.md» |
-| **A check whose ground truth answers a different question** | 1 | R5 — the oracle used `pipefail`, which reports the LAST command's status, so it could not fire on ten of the thirteen fatals it claimed to cover |
-| **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
+| **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 |
+| **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 |
+| **The guard is beaten by the layer IN FRONT of it** | 3 | R2 |
+| **A grammar emitted for an interpreter the check cannot run** | 4 | R3 |
+| **Writing the very syntax the comment warns about, into a comment** | 2 | R6 |
+| **A commit whose message describes work the commit does not contain** | 1 | R6 |
+| **A check invented from a file merely being present** | 5 | R5 |
+| **A name believed instead of the behaviour behind it** | 3 | R5 |
+| **A half-finished artifact left by an unhappy path, which then blocks its own retry** | 3 | R5 |
+| **A guard that judges a LAYER and not the thing** | 6 | R5 |
+| **A test that depends on a platform value it never names** | 2 | R6 |
+| **The tool's own printed instruction does not work** | 7 | R6 |
+| **A check whose ground truth answers a different question** | 1 | R5 |
+| **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 |
 
 ## Patterns
 

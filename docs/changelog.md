@@ -4,6 +4,26 @@ What shipped, newest first. One line per landed change: what it does, and what
 was wrong before. **Newest first** — it read oldest-first once and a cold-start
 drill named the oldest change as the most recent thing that landed.
 
+- **I19 · the first real run** — `loop.mjs` driving a real `claude -p` against
+  this repository, the Ralph shape with this skill's stopping conditions. One
+  iteration took **22 minutes and printed nothing**, and nothing bounded it: so
+  the loop grew `--timeout` (45 min default) and a per-minute heartbeat. Six
+  review rounds found neither. The agent's own iteration dispatched cold-start
+  drill 4 and fixed the guard count it caught.
+- **I18 · round 6** — the carrier locked the emit directory instead of the
+  project; SIGHUP orphaned a paid agent while freeing the lock; thrash was
+  inert for the recommended workflow; seven printed instructions did not work,
+  and a seventh oracle now runs every script and checks what it printed.
+- **I17 · six guards, six oracles** — `tools.mjs` and thrash detection got
+  theirs; each was watched failing against the historic defect it covers.
+- **I16 · round 5** — fourteen fatals, eight of them in three scripts nobody
+  had ever reviewed. **The oracle itself was found decorative** — it passed
+  against a binary with two known fatals — and rebuilt with `bash -e -o
+  pipefail` and its own regression test against historic versions.
+- **I15 · the carrier's grammars** — the workflow read by a real YAML parser,
+  the schedule expanded over a week and its gaps measured.
+- **I14 · cron cut, and a stopping rule that can be met** — four findings in
+  three rounds lived in a grammar nothing in the check could execute.
 - **I13 · the ledger's own debt** — one taxonomy for «cause» (`failures.md`'s
   table, cited by §7), the goal sentence rewritten to the rule that applies, the
   six guards enumerated so clause 1 has a denominator, a drill-recording
