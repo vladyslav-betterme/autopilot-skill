@@ -128,21 +128,54 @@ const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  * decides the status somewhere other than the command you named.
  */
 function compoundProblem(script) {
-  const stripped = String(script)
-    .replace(/'[^']*'/g, ' ')
-    .replace(/"[^"]*"/g, ' ')
-    .replace(/\d?>&\d?/g, ' ')
-    .replace(/[<>]{1,2}\s*[^\s;|&]+/g, ' ')
-    .replace(/&&/g, ' ')
-    .replace(/\|\|\s*exit\b/g, ' ');
-  const m = /[\n;|&`]|\$\(/.exec(stripped);
-  return m ? (m[0] === '\n' ? 'a newline' : `«${m[0]}»`) : null;
+  const s = String(script);
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      // Inside quotes everything is DATA. This is the whole fix: the previous
+      // version stripped `'…'` before `"…"`, so an apostrophe inside a
+      // double-quoted string paired across whatever sat between them and
+      // deleted it — `echo "don't panic" ; false ; echo "we're green"` was
+      // cleared and recorded as `→ 0` for a check that exited 1. A stage that
+      // decides what the guard gets to SEE is forgeable by data; a scanner that
+      // tracks quoting is not.
+      if (quote === '"' && c === '\\') { i++; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"') { quote = c; continue; }
+    if (c === '\\') { i++; continue; }              // an escaped separator is data
+    if (c === '\n') return 'a newline';
+    if (c === ';') return '«;»';
+    if (c === '`') return 'a backtick';
+    if (c === '$' && s[i + 1] === '(') return '«$(…)»';
+    if (c === '|') {
+      if (s[i + 1] === '|') {
+        // `|| exit …` is the honest guard idiom; `|| true` is the commonest way
+        // there is to swallow a failure.
+        if (/^\s*exit\b/.test(s.slice(i + 2))) { i++; continue; }
+        return '«||» followed by something that can succeed';
+      }
+      return '«|»';
+    }
+    if (c === '&') {
+      if (s[i + 1] === '&') { i++; continue; }        // propagates failure
+      if (/[>&]/.test(s[i - 1] ?? '')) continue;      // `2>&1`, `>&2` — a redirect
+      return 'a background «&»';
+    }
+  }
+  return quote ? `an unbalanced ${quote === '"' ? 'double' : 'single'} quote` : null;
 }
 
 /** The shell may be wrapped: `env sh -c '…'`, `nice`, `time`, `cross-env`. Find
  *  the shell wherever it is rather than only at argv[0]. */
 const shellAt = cmd.findIndex((a) => SHELLS.has(path.basename(a)));
-const shellScript = shellAt === -1 ? null : cmd.slice(shellAt + 1).find((a) => !a.startsWith('-'));
+// The argument after `-c` SPECIFICALLY, not «the first thing without a dash».
+// Bash options take values: `bash -O extglob -c '… | …'` handed the guard the
+// string «extglob» and ran the pipe. `-lc` and friends are the same flag.
+const dashC = shellAt === -1 ? -1 : cmd.findIndex((a, i) => i > shellAt && /^-[a-zA-Z]*c$/.test(a));
+const shellScript = dashC === -1 ? null : cmd[dashC + 1];
 const shellProblem = shellScript ? compoundProblem(shellScript) : null;
 if (shellProblem) {
   die(`refusing a compound shell check — ${shellProblem} decides the status, not your command:\n` +

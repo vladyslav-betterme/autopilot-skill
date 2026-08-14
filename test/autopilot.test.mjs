@@ -511,6 +511,31 @@ test('the compound guard is a WHITELIST — it refuses what composes and allows 
   assert.equal(proveStatus(d, ['--', 'npm', 'run', 'verify']), 1);
 });
 
+test('quoting is SCANNED, not stripped in stages', () => {
+  // The stripper ran `'…'` before `"…"`, so an apostrophe inside a double-quoted
+  // string paired across whatever sat between and deleted it:
+  // `echo "don't panic" ; false ; echo "we're green"` was cleared and recorded
+  // as → 0 for a check that exited 1. A stage that decides what the guard SEES
+  // is forgeable by data.
+  const d = tmp();
+  const q = String.fromCharCode(39);
+  const body = `echo "don${q}t panic" ; node -e "process.exit(1)" ; echo "we${q}re green"`;
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ scripts: { verify: body } }));
+  assert.throws(() => prove(d, ['--', 'npm', 'run', 'verify']), /the check itself is compound/);
+  // …and the same apostrophe in an HONEST body must still run.
+  assert.equal(proveStatus(d, ['--', 'sh', '-c', `echo "it${q}s fine"`]), 0);
+  assert.equal(proveStatus(d, ['--', 'sh', '-c', 'echo "a|b"']), 0, 'a pipe inside quotes is data');
+});
+
+test('the shell script is the argument after -c, not the first thing without a dash', () => {
+  // `bash -O extglob -c '… | …'` handed the guard the string «extglob».
+  const d = tmp();
+  for (const flags of [['-O', 'extglob', '-c'], ['-o', 'posix', '-c'], ['-lc']]) {
+    assert.throws(() => prove(d, ['--', 'bash', ...flags, 'node -e "process.exit(1)" | cat']),
+      /compound shell check/, flags.join(' '));
+  }
+});
+
 test('a workspace flag is refused — the script npm will run is not the one this can read', () => {
   // `npm run verify -w packages/api` read the ROOT package.json, found it clean,
   // and recorded → 0 for a workspace script with a live pipe.

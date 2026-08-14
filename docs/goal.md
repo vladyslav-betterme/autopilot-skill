@@ -94,3 +94,4 @@ fatal or major finding in the same area two rounds running.
 - **I11** — the published install, run end to end: `npx skills add …` into a
   clean project, then all ten documented commands, ten for ten. Nobody had run
   the path the README's first line describes.
+- **prove** `npm run verify` → 0, 0 (2 runs) — R4 prove: quoting scanned, -c located · 2026-08-14T08:52:02Z
