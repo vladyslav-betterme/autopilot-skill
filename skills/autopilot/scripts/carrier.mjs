@@ -11,7 +11,7 @@
  * decision that was not its to make.
  *
  *   node carrier.mjs --agent "claude -p 'continue the autopilot loop'"
- *   node carrier.mjs --agent "codex exec 'continue'" --every 15m --kind cron
+ *   node carrier.mjs --agent "codex exec 'continue'" --every 15m
  *   node carrier.mjs --agent "…" --kind github > .github/workflows/autopilot.yml
  *
  * Before using this at all, check the rung above it: **if your harness already
@@ -47,7 +47,7 @@ if (!m) die(`--every wants 30m, 2h or a number of minutes — got «${everyRaw}�
 const minutes = Number(m[1]) * (/^h/i.test(m[2] ?? 'm') ? 60 : 1);
 if (minutes < 1) die('--every must be at least 1 minute');
 
-const kind = flag('--kind', process.platform === 'darwin' ? 'launchd' : 'linux');
+const kind = flag('--kind', process.platform === 'darwin' ? 'launchd' : 'github');
 const label = `autopilot.${path.basename(root).replace(/[^a-zA-Z0-9.-]/g, '-')}`;
 // The unit's STOP path is written once, into a file that will run for weeks —
 // so an ambiguous ledger is resolved by the human now, not by a guess baked
@@ -84,41 +84,51 @@ const logDir = 'agent-logs';
  * sixty times it. (The old expression is not quoted here: it contains the
  * characters that end a block comment, which is its own small lesson.)
  */
+/**
+ * GitHub Actions schedules ARE cron expressions, so the expression builder
+ * stays even though the crontab EMITTER is gone. The cut was the crontab
+ * command line — shell escaping, `%` becoming a newline, an almost-empty PATH,
+ * everything on one line — not these five fields.
+ *
+ * A step in a cron field means «every value of the field divisible by N», not
+ * «every N». For a non-divisor it wraps: a 45-minute step fires at :00 and :45
+ * — 45 minutes, then 15 — so 48 paid invocations a day where 32 were asked for,
+ * under a header saying «every 45 min». cron cannot say what --every means
+ * here, so it says so instead of guessing.
+ *
+ * (Written without the step syntax itself: those two characters END a block
+ * comment, and this is the SECOND time that broke this file. The first time is
+ * noted forty lines up, which is exactly how much good a note does.)
+ */
 function cronFor(mins) {
-  // `*/N` means «every value of the field divisible by N», not «every N». For a
-  // non-divisor it wraps: `*/45` fires at :00 and :45 — 45 minutes, then 15,
-  // then 45 — 48 paid invocations a day where 32 were asked for, under a header
-  // this script prints saying «every 45 min». `*/59` is worse: :00 and :59, two
-  // invocations sixty seconds apart. cron cannot say what --every means here,
-  // so it says so instead of guessing.
   const divisors = (n) => Array.from({ length: n }, (_, i) => i + 1).filter((d) => n % d === 0);
   if (mins < 60) {
     if (60 % mins) {
-      die(`cron cannot fire every ${mins} minutes: «*/${mins}» means «every minute divisible by ${mins}»,\n` +
-        `which for ${mins} is ${[...Array(Math.ceil(60 / mins)).keys()].map((i) => ':' + String(i * mins).padStart(2, '0')).join(' ')} and then a jump — more runs than you asked for, and unevenly spaced.\n` +
+      die(`a cron schedule cannot fire every ${mins} minutes: «*/${mins}» means «every minute divisible by ${mins}»,\n` +
+        `which wraps at the hour — more runs than you asked for, unevenly spaced.\n` +
         `Whole divisors of an hour: ${divisors(60).filter((d) => d < 60).join(', ')} minutes.\n` +
-        (process.platform === 'darwin' ? 'Or use --kind launchd, whose StartInterval is exact.' : 'Or run the loop under a scheduler that takes a period rather than a calendar.'));
+        (process.platform === 'darwin' ? 'Or use --kind launchd, whose StartInterval is exact.' : 'Or run loop.mjs directly, which takes a period rather than a calendar.'));
     }
     return `*/${mins} * * * *`;
   }
   if (mins % 60) {
-    die(`cron has no «every ${mins} minutes»: past an hour it can only fire on whole hours.\n` +
+    die(`a cron schedule has no «every ${mins} minutes»: past an hour it can only fire on whole hours.\n` +
       `Use a whole number of hours (${divisors(24).map((h) => h + 'h').join(', ')}), or --kind launchd for an exact interval.`);
   }
   const hours = mins / 60;
   if (hours < 24) {
     if (24 % hours) {
-      die(`cron cannot fire every ${hours} hours: «*/${hours}» means «every hour divisible by ${hours}», which wraps at midnight.\n` +
+      die(`a cron schedule cannot fire every ${hours} hours: «*/${hours}» wraps at midnight.\n` +
         `Whole divisors of a day: ${divisors(24).filter((h) => h < 24).map((h) => h + 'h').join(', ')}.`);
     }
     return `0 */${hours} * * *`;
   }
-  if (hours % 24) die(`past a day, use a whole number of days.`);
+  if (hours % 24) die('past a day, use a whole number of days.');
   const days = hours / 24;
   if (days > 28) die('a period longer than 28 days is not expressible in cron — schedule it yourself.');
   return days === 1 ? '0 0 * * *' : `0 0 */${days} * *`;
 }
-const cronExpr = kind === 'cron' || kind === 'linux' || kind === 'github' ? cronFor(minutes) : '';
+const cronExpr = kind === 'github' ? cronFor(minutes) : '';
 
 /**
  * The wrapper every carrier runs, and the reason this is not just a cron line.
@@ -168,19 +178,6 @@ const LAUNCHD = () => `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>`;
 
-/** cron turns an unescaped `%` into a newline and sends everything after it to
- *  the command as stdin — so a project path containing «100%» or a prompt
- *  saying «reach 100% coverage» truncated the command mid-quote, took the log
- *  redirect with it, and failed every interval into a log file that was
- *  therefore never created. */
-const cronEscape = (s) => s.replace(/%/g, '\\%');
-
-const CRON = () => `# every ${minutes} min — autopilot carrier for ${root}
-# PATH is set explicitly: cron's is nearly empty, and «command not found» in a
-# job nobody watches looks exactly like «the loop is quietly working».
-PATH=${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}
-${cronExpr} /bin/sh -c '${cronEscape(wrapper.replace(/'/g, `'\\''`))}' >> ${cronEscape(path.join(root, logDir, 'carrier.log'))} 2>&1`;
-
 const GITHUB = () => `# The only carrier here that survives the laptop being closed — and the only
 # one that spends somebody's money on a schedule. Every run costs an agent
 # invocation, and a loop with no stopping condition costs it forever: keep the
@@ -223,8 +220,23 @@ jobs:
         run: |
 ${agent.split('\n').map((l) => '          ' + l).join('\n')}`;
 
-const EMIT = { launchd: LAUNCHD, cron: CRON, linux: CRON, github: GITHUB }[kind];
-if (!EMIT) die(`unknown --kind «${kind}» — launchd, cron or github`);
+const EMIT = { launchd: LAUNCHD, github: GITHUB }[kind];
+if (!EMIT) {
+  die(`unknown --kind «${kind}» — launchd or github.\n` +
+    (kind === 'cron' || kind === 'linux'
+      ? '\ncron was REMOVED, and the reason is worth reading before you ask for it back.\n' +
+        'It produced four of this skill\'s findings in three rounds — a minute field that meant\n' +
+        '«every minute divisible by N» rather than «every N» (48 paid runs a day where 32 were\n' +
+        'asked for), and a `%` that cron turns into a newline, truncating the command mid-quote.\n' +
+        'Both survived rounds of review for one reason: nothing in the suite can RUN a crontab,\n' +
+        'so no interpreter ever read what was emitted. A grammar nobody checks is where defects\n' +
+        'live, and this one spends money on a schedule.\n\n' +
+        'On macOS use --kind launchd, whose StartInterval is an exact period.\n' +
+        'On Linux use a systemd timer (OnUnitActiveSec is exact too), or just run the loop:\n' +
+        '  nohup node <skill>/scripts/loop.mjs --agent "…" &\n' +
+        'loop.mjs already owns the stopping conditions a schedule cannot express.'
+      : ''));
+}
 
 console.log(EMIT());
 
@@ -234,12 +246,9 @@ const install = {
     `  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${label}.plist\n` +
     `  launchctl kickstart -p gui/$(id -u)/${label}      # fire once now, and watch ${logDir}/carrier.log\n` +
     `  launchctl bootout gui/$(id -u)/${label}           # remove it`,
-  cron: `  crontab -l > /tmp/ct; node <skill>/scripts/carrier.mjs --agent … >> /tmp/ct; crontab /tmp/ct\n` +
-    `  crontab -l    # read it back — this is the step people skip\n` +
-    `  crontab -e    # remove the block to stop it`,
   github: `  commit it as .github/workflows/autopilot.yml, set the ANTHROPIC_API_KEY secret,\n` +
     `  then run it once from the Actions tab (workflow_dispatch) BEFORE letting the schedule have it.`,
-}[kind === 'linux' ? 'cron' : kind];
+}[kind];
 
 console.error(`\n# ── not installed ──────────────────────────────────────────────
 # This printed a unit. It did not arm anything: a job that runs an agent

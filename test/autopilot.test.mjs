@@ -1168,33 +1168,35 @@ test('cron refuses a period it cannot express, instead of firing more often', ()
   // 15, and 48 paid runs a day where 32 were asked for — under a header saying
   // «every 45 min».
   const d = tmp();
-  const emit = (every) => execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'cron', '--every', every],
+  const emit = (every) => execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'github', '--every', every],
     { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   for (const bad of ['45m', '59m', '25m', '90m', '7h']) {
-    assert.throws(() => emit(bad), /cron (cannot fire|has no)/, bad);
+    assert.throws(() => emit(bad), /cron schedule (cannot fire|has no)/, bad);
   }
   for (const good of ['30m', '20m', '2h', '6h']) assert.doesNotThrow(() => emit(good), good);
 });
 
-test('a percent in the path or the prompt does not truncate the cron command', () => {
+test('a percent in the prompt survives the emitted unit', () => {
   // cron turns an unescaped % into a newline and sends the rest to stdin: the
   // command was cut mid-quote, taking the log redirect with it, so it failed
   // every interval into a log file that was therefore never created.
-  const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', "claude -p 'reach 100% coverage'", '--kind', 'cron'],
+  // The crontab emitter is gone; what remains is the launchd plist, where a
+  // percent is ordinary. Kept as a regression: the escaping bug was in the
+  // command line, and this asserts the command survives intact somewhere.
+  const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', "claude -p 'reach 100% coverage'", '--kind', 'launchd'],
     { cwd: tmp(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  assert.match(out, /100\\% coverage/);
-  assert.doesNotMatch(out, /[^\\]100% coverage/);
+  assert.match(out, /reach 100% coverage/);
 });
 
 test('an hourly interval is an hourly cron, not one that fires every minute', () => {
   // `--every 2h` emitted a step-1 minute field: 720 agent invocations a day
   // instead of 12, under a header saying «every 120 min».
   const d = tmp();
-  const cron = (every) => execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'cron', '--every', every],
-    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').find((l) => /^[*0-9]/.test(l));
-  assert.match(cron('30m'), /^\*\/30 \* \* \* \*/);
-  assert.match(cron('2h'), /^0 \*\/2 \* \* \*/);
-  assert.match(cron('6h'), /^0 \*\/6 \* \* \*/);
+  const cron = (every) => execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'github', '--every', every],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').find((l) => l.includes('- cron:')) ?? '';
+  assert.match(cron('30m'), /'\*\/30 \* \* \* \*'/);
+  assert.match(cron('2h'), /'0 \*\/2 \* \* \*'/);
+  assert.match(cron('6h'), /'0 \*\/6 \* \* \*'/);
 });
 
 test('a walk that finds nothing must not mean «no STOP, no ledger, no guard»', () => {
@@ -1254,12 +1256,17 @@ test('the carrier reclaims a lock whose holder is gone', () => {
   assert.ok(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), 'a dead lock still disables the carrier');
 });
 
-test('the cron form is ONE command line — a crontab entry cannot wrap', () => {
-  const d = tmp();
-  const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'echo hi', '--kind', 'cron'],
-    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  const schedule = out.split('\n').filter((l) => /^[*\d]/.test(l));
-  assert.equal(schedule.length, 1, `a crontab entry split across lines:\n${out}`);
+test('cron was removed, and asking for it explains why', () => {
+  // Four findings in three rounds, all in the crontab COMMAND LINE — a minute
+  // field that meant «divisible by N», and a % that cron turns into a newline.
+  // Both survived review because nothing in the suite can run a crontab: no
+  // interpreter ever read what was emitted.
+  const out = (() => {
+    try { return execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'cron'], { cwd: tmp(), encoding: 'utf8' }); }
+    catch (err) { return err.stderr; }
+  })();
+  assert.match(out, /cron was REMOVED/);
+  assert.match(out, /launchd|systemd|loop\.mjs/);
 });
 
 test('the plist is loadable, not merely well-shaped', { skip: process.platform !== 'darwin' }, () => {

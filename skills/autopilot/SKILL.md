@@ -8,7 +8,7 @@ description: >-
   arms itself with the skills AND the reach the work needs (public skills, MCP
   servers, plugins, connectors — writing the MCP server when none exists), and
   iterates as a real process that stops on a STOP file, a budget or thrash.
-  Steerable mid-flight, carryable by launchd/cron/CI so it outlives the
+  Steerable mid-flight, carryable by launchd or CI so it outlives the
   session, and on a full context it checkpoints into its ledger and compacts
   instead of stopping. Every check is run by something that is not writing the
   summary; every criterion is verified by someone that is not you; every win,
@@ -477,23 +477,56 @@ What is never parked: spending money, and anything irreversible.
 ## 7. Stop the loop when
 
 The goal decides, not the mood. Stop when **every done-criterion in `goal.md` is
-met and verified by §3** — and, for a campaign of many review rounds, when all
-four of these hold too:
+met and verified by §3**.
 
-1. No fatal finding in the same area two rounds running. ← the one that matters
-2. Self-inflicted share of findings below ~30 %.
-3. Every remaining finding is minor **and** in an area whose count is falling.
-4. Every claim in a tracked doc has a command or a source that reproduces it.
+For a campaign of many review rounds, that is not enough — reviewers keep
+finding things, so «the critics went quiet» never arrives. Three conditions,
+all about ARTIFACTS, all checkable by someone who did not do the work:
+
+1. **Every guard that judges an input has a differential oracle, disagreeing
+   with it zero times on a corpus that only grows.** Not «a reviewer read it».
+   Pick a source of truth that is not the guard — for a check-runner, the status
+   the check has when a pipe cannot hide a failure — and assert agreement over
+   every construct the reviews have submitted. A new finding becomes a corpus
+   row before it becomes a fix.
+2. **Every artifact you EMIT is executed by its real interpreter in the check,
+   and every switch is asserted per path per kind.** The defects that survive
+   rounds live in whatever no interpreter reads. If you cannot run an emitted
+   grammar in the check, that is a reason to CUT it, not to review it again.
+3. **Two consecutive rounds add ZERO NEW CAUSES to `failures.md`.** Findings
+   may be non-zero; causes may not. This is the convergence measure — and
+   unlike «no fatal in the same area twice», it is demonstrably reachable: this
+   skill's own campaign went 6 → 1 → 0 → 2 new causes per round.
+
+Why the change, since the old rule sounded stricter: «no fatal in the same area
+two rounds running» was a coin this campaign flipped four times and lost four
+times. `prove` was clean in **0 rounds of 4**, `new-mcp` in 0 of 4. A rule
+nothing can satisfy stops being a stopping condition and becomes a reason the
+loop never ends — and a loop that cannot end is the failure this section exists
+to prevent, wearing a rule.
 
 **Also stop — and report — when the loop is not moving.** Two consecutive
 iterations with no criterion advanced is thrash, not persistence: say what is
-blocking, what you tried, and what you need.
+blocking, what you tried, and what you need. `loop.mjs` enforces this: no commit
+and no ledger change for `--thrash` iterations ends the run, and the ledger's
+CONTENT is what counts, because «the file was touched» is not work.
 
 Thrash detection does not catch the worse case: a goal that is WRONG advances
 its criteria happily forever. So run `references/premise-check.md` against the
 GOAL itself every third iteration — is this still the thing worth doing, and is
 it still true? And when two criteria contradict, that is a defect in the goal,
 not an iteration to attempt: stop, record it, ask.
+
+**Every third round, count instead of searching.** A convergence analyst
+(`references/critics.md`) classifies findings by CAUSE, says which areas still
+move, and answers the question no bug-hunter will: **is there a surface that
+should be CUT rather than fixed again?** On this repo it found that three causes
+produced 70 % of twenty fatals, that severity was going UP rather than down, and
+that one emitter had produced four findings in three rounds for one reason —
+nothing in the check could run what it emitted. That emitter is gone. The
+analyst was also wrong about one thing, which is why its recommendation was
+tested before being followed: it predicted a guard would prove redundant once
+the oracle existed, and disabling the guard made the oracle fail on six inputs.
 
 ## 8. Context — a checkpoint, not a stop
 

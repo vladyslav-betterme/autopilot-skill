@@ -26,6 +26,8 @@ inventing a direction.
 | **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 — `path.resolve` checked, `path.join` wrote; `prove` walked up, the carrier did not |
 | **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 — the separator regex; replaced by a whitelist |
 | **The guard is beaten by the layer IN FRONT of it** | 3 | R2, R3, R4 — each round's fix was correct and the stage feeding it was forgeable |
+| **A grammar emitted for an interpreter the check cannot run** | 4 | R3, R4 — cron and YAML; the surface was CUT rather than fixed a fifth time |
+| **Writing the very syntax the comment warns about, into a comment** | 2 | 2026-08-13 and 2026-08-14, same file: a cron step ends a block comment |
 | **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
 
 ## Patterns
@@ -137,3 +139,26 @@ diffs were SHORTER than what they replaced.
 
 **What is still open** is whether analysis is the right shape at all — see
 `decisions.md`, «not built: making the check honest instead of judging it».
+
+### Writing the very syntax the comment warns about — twice, in one file
+
+`carrier.mjs` broke because a block comment contained a cron step expression,
+whose two characters close a block comment. It was fixed with a note saying so.
+**The next day the same file broke the same way**, in a comment explaining the
+same bug — written by the same author who had written the note.
+
+**The tell:** you are quoting a syntax INSIDE the syntax that has to hold it.
+The note in the file did nothing; what would have worked is `node --check`
+before saving, which is one command and now runs after every edit to a script.
+
+### A grammar emitted for an interpreter the check cannot run
+
+cron and GitHub Actions YAML produced four findings across two rounds, and a
+convergence analyst put the cause exactly: every carrier defect that survived a
+round lived in the part no interpreter reads. The suite executes the emitted
+`sh` wrapper and lints the plist — those two never carried a surviving defect.
+
+**The response was not a fifth fix.** `--kind cron` is deleted; the schedule
+expression it shared with GitHub stays, because that is five fields and not a
+command line. **If you cannot run an emitted grammar in your check, that is a
+reason to cut it, not to review it again.**

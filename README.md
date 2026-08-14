@@ -211,8 +211,8 @@ refuses to start without a `goal.md` at all.
 agent on stdin: reprioritise mid-flight without killing the run. `STOP` is the
 switch, steering is the dial.
 
-`carrier.mjs` is the other shape — a launchd, cron or GitHub unit that outlives
-the session. It prints; it installs nothing.
+`carrier.mjs` is the other shape — a launchd or GitHub unit that outlives the
+session. It prints; it installs nothing.
 
 ## Reach, not only knowledge
 
@@ -260,7 +260,7 @@ tool, continue after a restart» is a loop that stalled while producing a file.
 | [`scripts/tools.mjs`](skills/autopilot/scripts/tools.mjs) | MCP servers and plugins across six harnesses — and the honest list of what nothing on disk can tell you. |
 | [`scripts/new-mcp.mjs`](skills/autopilot/scripts/new-mcp.mjs) | Write the server that does not exist, register it, and call it **now** — an MCP config is usually only read at startup. |
 | [`scripts/prove.mjs`](skills/autopilot/scripts/prove.mjs) | Run the check and BE the thing that reports its status — no shell, a piped npm script refused, flaky detected, the number written into `goal.md` by the run rather than by the summary. |
-| [`scripts/carrier.mjs`](skills/autopilot/scripts/carrier.mjs) | Emit the launchd / cron / GitHub Actions unit that outlives the session — and install nothing. |
+| [`scripts/carrier.mjs`](skills/autopilot/scripts/carrier.mjs) | Emit the launchd or GitHub Actions unit that outlives the session — and install nothing. cron was cut: four findings in three rounds, all in a grammar nothing in the check could execute. |
 | [`scripts/loop.mjs`](skills/autopilot/scripts/loop.mjs) | The loop as a **process**: iterate until a `STOP` file, `--max`, thrash (no commit and no ledger change), or an agent that keeps failing. `STEERING.md` is read fresh each pass. `--status` shows what the runs did. |
 | [`scripts/lib.mjs`](skills/autopilot/scripts/lib.mjs) | The questions two scripts both ask, asked in one place. |
 
@@ -286,6 +286,11 @@ tool, continue after a restart» is a loop that stalled while producing a file.
   stops when everything left is parked.
 - **Stop on a criterion, not on a mood** — and on **thrash**: two iterations with
   nothing advanced is a wrong premise, not persistence.
+- **A stopping rule nothing can satisfy is not a stopping rule.** «No fatal in
+  the same area two rounds running» was lost four times out of four here. What
+  replaced it is about artifacts: a differential oracle per guard, every emitted
+  grammar executed by its real interpreter, and two rounds adding zero new
+  CAUSES. If you cannot run an emitted grammar in your check, cut it.
 - **A full context is a checkpoint, not a stop.** Write the state into the
   ledger, commit what is green, compact, and resume by re-reading the ledger —
   never from the summary written by the context being discarded. Safe only

@@ -102,3 +102,8 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 1, 1 (2 runs) — R4 loop+carrier lock reclaim · 2026-08-14T09:05:42Z
 - **prove** `npm run verify` → 0 — R4 loop+carrier complete · 2026-08-14T09:06:50Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — the differential oracle · 2026-08-14T09:10:17Z
+- **prove** `npm run verify` → 1 — cron cut · 2026-08-14T09:12:10Z
+- **prove** `npm run verify` → 1 — cron cut · 2026-08-14T09:12:55Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — cron cut, schedule kept · 2026-08-14T09:14:07Z
+- **prove** `npm run verify` → 0 — the stopping rule that can be satisfied · 2026-08-14T09:15:04Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R4 complete: cron cut, oracle, new stopping rule · 2026-08-14T09:16:34Z
