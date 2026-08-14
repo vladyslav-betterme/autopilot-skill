@@ -21,7 +21,7 @@
  * Prints to stdout. Writes nothing, installs nothing, needs no dependencies.
  */
 import path from 'node:path';
-import { findLedgerHomes, projectDirs, LEDGER_HOMES, STOP_FILE } from './lib.mjs';
+import { findLedgerHomes, projectDirs, LEDGER_HOMES, LOCK_DIR, STOP_FILE } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -102,14 +102,14 @@ const cronExpr = minutes < 60
  *     starts a second agent on the same ledger, and two loops sharing one
  *     goal.md is how a criterion gets marked met twice and landed once.
  *     ponytail: mkdir is the lock because it is atomic everywhere; there is no
- *     staleness timeout, so a crash leaves .carrier.lock behind — the message
+ *     staleness timeout, so a crash leaves the lock directory behind — the message
  *     below says to delete it, and that is the whole recovery path.
  */
 const wrapper = [
   `cd ${JSON.stringify(root)} || exit 1`,
   `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do [ -e "$s" ] && exit 0; done`,
-  `mkdir .carrier.lock 2>/dev/null || exit 0`,
-  `trap 'rmdir .carrier.lock' EXIT`,
+  `mkdir ${LOCK_DIR} 2>/dev/null || exit 0`,
+  `trap 'rmdir ${LOCK_DIR}' EXIT`,
   `mkdir -p ${logDir}`,
   agent,
   // `;`, never `&&`. Joined with `&&` this reads fine and is silently inert:
@@ -209,7 +209,7 @@ ${install}
 # It halts on ANY of: ${stopPaths.join(' ')}
 # — the same set prove.mjs honours, so stopping the loop cannot leave a daemon
 # iterating without it. (${stopPath} is the one this project's ledger implies.)
-# If a run crashes, .carrier.lock is left behind and every later run exits 0
+# If a run crashes, ${LOCK_DIR} is left behind and every later run exits 0
 # doing nothing: delete the directory to resume.
 # Logs: ${path.join(logDir, 'carrier.log')} — read it after the first fire, or you have
 # armed something you have never seen run.`);

@@ -188,6 +188,29 @@ refuses a name that already exists — including one held by a dangling symlink 
 and refuses a description under 40 characters, because the description **is** the
 trigger.
 
+## Running it
+
+Two shapes, and they are not the same thing:
+
+```bash
+node <skill>/scripts/loop.mjs --agent "claude -p 'continue the loop; read docs/goal.md first'"
+node <skill>/scripts/loop.mjs --status
+```
+
+`loop.mjs` iterates **now**, in front of you. What makes it a loop rather than a
+`while true` is that it stops on the ledger's terms: a `STOP` file, `--max`
+iterations (25 by default, never «forever»), **thrash** — two iterations in a
+row with no commit and no ledger change — or an agent that exits non-zero twice
+running. Each stop is written to `agent-logs/loop.jsonl` with its reason, and it
+refuses to start without a `goal.md` at all.
+
+`<ledger home>/STEERING.md` is read fresh every iteration and handed to the
+agent on stdin: reprioritise mid-flight without killing the run. `STOP` is the
+switch, steering is the dial.
+
+`carrier.mjs` is the other shape — a launchd, cron or GitHub unit that outlives
+the session. It prints; it installs nothing.
+
 ## Reach, not only knowledge
 
 Skills change what the agent knows; they do not let it touch anything new.
@@ -235,6 +258,7 @@ tool, continue after a restart» is a loop that stalled while producing a file.
 | [`scripts/new-mcp.mjs`](skills/autopilot/scripts/new-mcp.mjs) | Write the server that does not exist, register it, and call it **now** — an MCP config is usually only read at startup. |
 | [`scripts/prove.mjs`](skills/autopilot/scripts/prove.mjs) | Run the check and BE the thing that reports its status — no shell, a piped npm script refused, flaky detected, the number written into `goal.md` by the run rather than by the summary. |
 | [`scripts/carrier.mjs`](skills/autopilot/scripts/carrier.mjs) | Emit the launchd / cron / GitHub Actions unit that outlives the session — and install nothing. |
+| [`scripts/loop.mjs`](skills/autopilot/scripts/loop.mjs) | The loop as a **process**: iterate until a `STOP` file, `--max`, thrash (no commit and no ledger change), or an agent that keeps failing. `STEERING.md` is read fresh each pass. `--status` shows what the runs did. |
 | [`scripts/lib.mjs`](skills/autopilot/scripts/lib.mjs) | The questions two scripts both ask, asked in one place. |
 
 ## The parts worth stealing even if you never install it

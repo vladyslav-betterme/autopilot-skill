@@ -398,10 +398,30 @@ and say which.
 
 **Be honest about what the wakeup is worth.** A self-scheduled wakeup lives
 inside the session: close the window and it is gone. That is a timer in a
-conversation, not autonomy. Real unattended running needs a carrier that
-outlives the session, and the ladder applies here too: **if the harness already
-has a scheduler, use it** — a cloud schedule, a runner, an existing CI cron. Only
-when there is none:
+conversation, not autonomy. There are two ways out, and they are different:
+
+```bash
+node <skill>/scripts/loop.mjs --agent "claude -p 'continue the loop; read docs/goal.md first'"
+node <skill>/scripts/loop.mjs --status      # what the last runs actually did
+```
+
+**`loop.mjs` is the loop as a process** — it iterates in front of you until the
+ledger says stop, not until your patience does. Four stopping conditions, each
+written into `agent-logs/loop.jsonl` with its reason: a `STOP` file, `--max`
+(the default is 25, never «forever»), **thrash** — `--thrash` iterations in a
+row with no commit and no ledger change, which is §7 made mechanical — and an
+agent that exits non-zero that many times running. It refuses to start at all
+without a `goal.md`, because a loop whose stopping condition is not written
+down is a `while true` with a nicer name.
+
+**`<ledger home>/STEERING.md` is the dial.** If it exists it is read FRESH each
+iteration and passed to the agent on stdin, so you can reprioritise mid-flight
+without killing the run. `STOP` is the switch; steering is the dial; between
+them you rarely need to kill anything.
+
+**A carrier is what survives the window closing.** The ladder applies here too:
+**if the harness already has a scheduler, use it** — a cloud schedule, a runner,
+an existing CI cron. Only when there is none:
 
 ```bash
 node <skill>/scripts/carrier.mjs --agent "claude -p 'continue the loop; read docs/goal.md first'" --every 30m

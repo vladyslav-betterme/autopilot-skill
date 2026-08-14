@@ -78,3 +78,5 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 0 — round 3: new-mcp fatals pinned · 2026-08-14T08:05:03Z
 - **prove** `npm run verify` → 0 — round 3: ledger+carrier fatals · 2026-08-14T08:06:46Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — round 3 pinned: 5 fatal across prove/ledger/new-mcp · 2026-08-14T08:07:27Z
+- **prove** `npm run verify` → 1 — loop.mjs: the loop as a process · 2026-08-14T08:12:42Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — loop.mjs + one lock name · 2026-08-14T08:13:14Z

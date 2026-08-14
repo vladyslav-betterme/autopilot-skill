@@ -59,6 +59,12 @@ export const LEDGER_HOMES = [
  *  a stop the loop has to REMEMBER to honour is not a stop. */
 export const STOP_FILE = 'STOP';
 
+/** ONE lock for every shape of iteration — a scheduled carrier firing while a
+ *  human drives `loop.mjs` is two agents on one ledger, which is how a criterion
+ *  gets marked met twice and landed once. Two lock names would be two answers
+ *  to one question. */
+export const LOCK_DIR = '.autopilot.lock';
+
 /**
  * A directory entry by its EXACT name.
  *

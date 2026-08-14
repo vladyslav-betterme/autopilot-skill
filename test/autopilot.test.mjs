@@ -839,6 +839,72 @@ test('«constructor» is not already registered in an empty config', () => {
 });
 
 /**
+ * The loop as a PROCESS — the part that was doctrine and not a program.
+ *
+ * A bare `while true` stops when the human's patience does. These pin the four
+ * stopping conditions that make this a loop with a stopping condition.
+ */
+const loop = (cwd, args) => execFileSync('node', [path.join(SCRIPTS, 'loop.mjs'), ...args],
+  { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const loopStatus = (cwd, args) => { try { loop(cwd, args); return 0; } catch (err) { return err.status; } };
+const looped = (cwd) => {
+  const d = cwd ?? tmp();
+  fs.mkdirSync(path.join(d, 'docs'), { recursive: true });
+  run('bootstrap.mjs', d);
+  return d;
+};
+
+test('nothing changed twice running is THRASH, not persistence', () => {
+  const d = looped();
+  assert.equal(loopStatus(d, ['--agent', 'echo working hard', '--sleep', '0', '--max', '10']), 3);
+  const log = fs.readFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), 'utf8');
+  assert.match(log, /"stopped":"thrash"/);
+});
+
+test('--max is exact — the bound must not move with the counter', () => {
+  // `n <= readLog().length + max` re-read a log every iteration appends to, so
+  // --max 3 ran forever: a loop with no stopping condition, in the file whose
+  // whole subject is stopping conditions.
+  const d = looped();
+  loopStatus(d, ['--agent', 'date >> docs/goal.md', '--sleep', '0', '--max', '3']);
+  const rows = fs.readFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.filter((r) => r.exit !== null).length, 3, 'ran a different number of iterations than asked');
+});
+
+test('a STOP file ends the loop between iterations', () => {
+  const d = looped();
+  fs.writeFileSync(path.join(d, 'docs', 'STOP'), 'owner asked\n');
+  const out = loop(d, ['--agent', 'date >> docs/goal.md', '--sleep', '0', '--max', '5']);
+  assert.match(out, /STOPPED by docs\/STOP/);
+  assert.doesNotMatch(out, /▶/, 'it ran an iteration anyway');
+});
+
+test('an agent that keeps failing is stopped, not retried until the budget is gone', () => {
+  const d = looped();
+  assert.equal(loopStatus(d, ['--agent', 'date >> docs/goal.md; exit 7', '--sleep', '0', '--max', '9']), 4);
+});
+
+test('STEERING.md reaches the agent, read fresh every iteration', () => {
+  const d = looped();
+  fs.writeFileSync(path.join(d, 'docs', 'STEERING.md'), 'focus on criterion 3 only\n');
+  loopStatus(d, ['--agent', 'cat >> got.txt; date >> docs/goal.md', '--sleep', '0', '--max', '2']);
+  assert.match(fs.readFileSync(path.join(d, 'got.txt'), 'utf8'), /criterion 3/);
+});
+
+test('two loops cannot share one ledger', () => {
+  const d = looped();
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  const out = (() => { try { return loop(d, ['--agent', 'echo x', '--sleep', '0']); } catch (err) { return err.stderr; } })();
+  assert.match(out, /another iteration is running/);
+});
+
+test('the loop refuses to run without a goal', () => {
+  const d = tmp();
+  const out = (() => { try { return loop(d, ['--agent', 'echo x']); } catch (err) { return err.stderr; } })();
+  assert.match(out, /no goal\.md/);
+});
+
+/**
  * The carrier — what runs the loop when the window is closed.
  *
  * These execute the emitted wrapper rather than reading it. The first version
@@ -873,7 +939,7 @@ test('STOP halts the carrier too — otherwise stopping the loop leaves a daemon
   fs.writeFileSync(path.join(d, home, 'STOP'), 'halt\n');
   execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
   assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'the agent ran with STOP present');
-  assert.equal(fs.existsSync(path.join(d, '.carrier.lock')), false, 'the lock leaked');
+  assert.equal(fs.existsSync(path.join(d, '.autopilot.lock')), false, 'the lock leaked');
 });
 
 test('the carrier honours every STOP path the loop does, not one baked-in string', () => {
@@ -954,7 +1020,9 @@ test('a run that overlaps the previous one does nothing — two loops share one 
   const d = tmp();
   run('bootstrap.mjs', d);
   const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
-  fs.mkdirSync(path.join(d, '.carrier.lock'));
+  // ONE lock name for every shape of iteration: a scheduled carrier firing
+  // while a human drives loop.mjs is two agents on one ledger.
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
   execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
   assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'a second agent started on the same ledger');
 });
