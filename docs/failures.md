@@ -13,6 +13,10 @@ Count **per area**. A falling total hides one area getting worse.
 > own it. Count them with:
 > `grep -oE '\| R[0-9]+' docs/failures.md | sort | uniq -c`
 >
+> (The header column was literally `R1` until drill 8's honesty audit, so the
+> counter counted the HEADER and reported one row too many for round 1 — the
+> stopping rule's own unit, off by one in its own prescribed measurement.)
+>
 > **This table is the ONE taxonomy.** §7's stopping rule counts «new causes per
 > round», and a cold-start drill found that number defined twice at different
 > granularity — 15 rows here against «9 distinct causes» in the review file —
@@ -28,7 +32,7 @@ Round 1 of review (2026-08-13, `docs/reviews/campaign-01.md`) is the first data
 point. «Trend» needs two rounds to mean anything and says so rather than
 inventing a direction.
 
-| Cause | R1 | Trend |
+| Cause | count | Trend |
 |---|---:|---|
 | **A permissive parser accepts what it should refuse** — an unknown flag ignored, `--times=3` not matching `--times`, `--dir /opt/x`, a TOML path taking a JSON write | 5 | R1 |
 | **An error swallowed into silence, which then reads as absence or success** — a config parse error into `null` and then over the file, an unreadable config as «no MCP here», a failed record throwing past the verdict | 4 | R1 |
@@ -38,7 +42,7 @@ inventing a direction.
 | **A composed chain whose short-circuit swallows the payload** | 1 | R1 |
 | **`process.exit` before stdout has drained** | 1 | R1 |
 | **A discovered value hardcoded at the second call site** | 1 | R1 |
-| **A document stating as an invariant what was never checked** | 10 claims | first round — one written BY this campaign an hour after the rule against it; a tenth found by cold-start drill 4, in this campaign's own ledger again |
+| **A document stating as an invariant what was never checked** | 26 claims | R1 — one written BY this campaign an hour after the rule against it; a tenth found by cold-start drill 4, in this campaign's own ledger again; **+16 more in round 6's honesty audit**, folded in here because they were the same cause and were being counted nowhere. This row had NO tag until drill 5, so the prescribed `grep` skipped the largest category in its own taxonomy |
 | **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 |
 | **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 |
 | **The guard is beaten by the layer IN FRONT of it** | 3 | R2 |
@@ -53,6 +57,12 @@ inventing a direction.
 | **The tool's own printed instruction does not work** | 7 | R6 |
 | **A check whose ground truth answers a different question** | 1 | R5 |
 | **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 |
+| **A guard written for one process, in a program a scheduler runs twice** — a non-atomic lock reclaim, a release that does not check ownership, a kill timer that outlives its own iteration, a cron step that wraps at the month boundary | 4 | R7 |
+| **The tested copy of a rule and the copy that RUNS are different files** — «EPERM counts as alive» was true of `lib.mjs` and false of the shell line the carrier emits | 1 | R7 |
+| **One step made atomic, while the RACE spans two** — `rename` is atomic, but «is this holder dead» and «remove its lock» are still two steps, and a competitor reclaims in between | 1 | R8 |
+| **A stopping rule proved reachable by a number nobody ran the command for** — «6 → 1 → 0 → 2 new causes per round» matched the counter on no round at all, and its load-bearing 0 was a round with four rows | 1 | R8 |
+| **An enumeration that is a claim of exhaustiveness, counted from memory** — «four stopping conditions» with five in the code; «the default cadence» naming one number where three mechanisms have three | 2 | R8 |
+| **A number that cannot be honoured, accepted as if it were** — `--timeout 40000` overflowed `setTimeout` and fired after 1 ms, so a very long timeout became no timeout | 1 | R7 |
 
 ## Patterns
 
@@ -292,3 +302,37 @@ agent killed instantly, while the loop printed «40000 min» and the ledger
 recorded a 40000-minute timeout for a 0-second run. Refusing a value is the only
 honest answer when the runtime cannot represent it — the same rule this repo
 already applies to a cron period it cannot express.
+
+### One step made atomic, while the RACE spans two (R8)
+
+Round 7 replaced a two-syscall lock reclaim (`rmSync` + `mkdirSync`) with a
+single atomic `renameSync` and called the fatal closed. The oracle written in the
+same commit passed — five times standalone. Under the FULL SUITE, with the
+machine loaded, it failed with **three to six simultaneous holders in every
+trial**: worse than the bug it replaced.
+
+`rename` is atomic; the reclaim is not. «This pid is dead» and «remove its
+directory» are two steps, and between them a competitor reclaims the same stale
+lock and creates its own LIVE one at that path — which the first process then
+deletes, believing it is the stale one it judged a moment ago.
+
+Two repairs, and the second is the one that matters:
+
+1. after moving the directory aside, **check what you moved**: if its pid is not
+   the dead pid you judged, or that pid is alive, put it back and start over.
+2. **the claim is not the directory, it is the pid file.** Every path ends with
+   the winner writing its own pid, so if two processes both believed they created
+   the lock, the file names exactly one. Wait for any racer to have written, read
+   it back, and whoever is not named says so. Residual races stop mattering,
+   because the property that is actually needed is «at most one holder», not «one
+   winner per syscall».
+
+**The tell:** a fix that makes one step atomic, when the invariant spans a
+decision and an action. Ask what the two steps are, and what a competitor can do
+between them — and if you cannot close it, make the CLAIM verifiable after the
+fact instead.
+
+**And the lesson about the check:** the oracle passed five consecutive standalone
+runs and failed under load. A concurrency guard that has not been run under load
+has not been run. This one now rides in the full suite, where the machine is busy
+by construction.

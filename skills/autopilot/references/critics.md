@@ -1,9 +1,12 @@
 # Critics — the review shape that produced reproductions
 
 The point is not opinions. It is finding the defect **you** cannot see because
-you did the work — 58–68 % of all findings in the later rounds of one measured
-campaign, on one repository. Your own number will differ; that it is large is
-the part that keeps being true.
+you did the work. In the campaign that produced this file, of the FATALS found
+in each round that re-reviewed a previous round's repairs, the share living
+inside those repairs was 4 of 4, then 2 of 5, then 8 of 9, then 6 of 14 —
+countable in `docs/reviews/campaign-01.md`'s round table, which the «58–68 %»
+that stood here was not. Your own number will differ; that it is large is the
+part that keeps being true.
 
 ```
 N hunters in parallel — ONE lens each, a schema, and facts marked «do not re-verify»

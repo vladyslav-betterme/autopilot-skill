@@ -214,9 +214,15 @@ of a whitelist became one scanner that tracks quote state; two functions
 answering «where does the state live» became one. The tell is that a fix keeps
 being correct and the next round keeps finding the stage before it.
 
-**Prove.** Run the discovered check, **in the foreground, reading the exit code
-in the shell that ran it** — or, better, let something that is not writing the
-summary read it for you:
+**Prove.** Let something that is not writing the summary run the check and read
+its exit code — **`prove.mjs`, not the bare command.** Running it yourself in
+the foreground and reading the status in the shell that ran it is the fallback
+when the runner cannot be used, and it costs you the kill switch: **`STOP` is
+enforced at `prove.mjs`, so a bare `npm run verify` never consults it.**
+`loop.mjs` and the emitted carrier check `STOP` themselves, so those two shapes
+stay stoppable either way — but the shape §5b calls the common one, a
+self-scheduled wakeup inside a session, has no other reader. There, skipping the
+runner turns the human's switch back into a request the loop has to notice.
 
 ```bash
 node <skill>/scripts/prove.mjs --record -- npm run verify   # the check, its true status, into goal.md
@@ -285,9 +291,14 @@ not a deploy, and a merged PR is not a live change.
 
 This is not the same as running the check, and it is not optional.
 
-**Your own fixes are the second-largest source of defects** — 58–68 % of all
-findings in the later rounds of one measured campaign, on one repository. You cannot see them, because
-writing them is what ruled out seeing them.
+**Your own fixes are where the next round's defects live.** Count it rather than
+believing a percentage — this file carried «58–68 % of all findings» until an
+honesty auditor looked for the measurement and found none. What IS in the record
+(`docs/reviews/campaign-01.md`, round table): of the FATALS found in each round
+that re-reviewed a previous round's repairs, the share that lived inside those
+repairs was **4 of 4, then 2 of 5, then 8 of 9, then 6 of 14**. Your own number
+will differ; that it is large is the part that keeps being true. You cannot see
+them, because writing them is what ruled out seeing them.
 
 - **Every iteration: at least one subagent** that did not do the work, given the
   exact scope, **read-only**, whose job is to REFUTE the claim that it is done.
@@ -403,11 +414,15 @@ invisible until they asked why the timer had stopped. **A mechanism that depends
 on the agent remembering to re-arm it is not a mechanism; it is discipline
 wearing the costume of one.**
 
-**Cadence: 5 minutes by default.** Long gaps were chosen to «leave room to
-intervene», which is the wrong trade: the human can interrupt at any moment
-anyway, and a long timer mostly buys dead air. Go longer only when waiting on
-something that genuinely moves slowly — a CI run, a deploy, a remote queue —
-and say which.
+**Cadence: 5 minutes by default for a SELF-SCHEDULED WAKEUP** — the timer inside
+a session, which is the only cadence you choose by hand. (`loop.mjs` waits
+`--sleep 15` SECONDS between iterations, because nothing is idling; a carrier
+runs on `--every 30m`. Three different numbers for three different mechanisms,
+and an auditor found all three called «the default» within thirty-five lines.)
+Long gaps were chosen to «leave room to intervene», which is the wrong trade:
+the human can interrupt at any moment anyway, and a long timer mostly buys dead
+air. Go longer only when waiting on something that genuinely moves slowly — a CI
+run, a deploy, a remote queue — and say which.
 
 **Be honest about what the wakeup is worth.** A self-scheduled wakeup lives
 inside the session: close the window and it is gone. That is a timer in a
@@ -419,18 +434,40 @@ node <skill>/scripts/loop.mjs --status      # what the last runs actually did
 ```
 
 **`loop.mjs` is the loop as a process** — it iterates in front of you until the
-ledger says stop, not until your patience does. Four stopping conditions, each
-written into `agent-logs/loop.jsonl` with its reason: a `STOP` file, `--max`
-(the default is 25, never «forever»), **thrash** — `--thrash` iterations in a
-row with no commit and no ledger change, which is §7 made mechanical — and an
-agent that exits non-zero that many times running. It refuses to start at all
-without a `goal.md`, because a loop whose stopping condition is not written
-down is a `while true` with a nicer name.
+ledger says stop, not until your patience does. **Five** stopping conditions,
+each written into `agent-logs/loop.jsonl` with its reason: a `STOP` file,
+`--max` (the default is 25, never «forever»), **thrash** — `--thrash` iterations
+in a row with no commit and no ledger change, which is §7 made mechanical — an
+agent that exits non-zero that many times running, and **five iterations that
+each returned in under a second**, which is not work: it is a backgrounded
+command or one that exits immediately. (This list said «four» while the fifth
+was in the code, and an auditor reproduced it in nine seconds. An enumeration is
+a claim of exhaustiveness — count it against the source before you write it.)
+It refuses to start at all without a `goal.md`, because a loop whose stopping
+condition is not written down is a `while true` with a nicer name.
+
+**And it bounds a single iteration: `--timeout`, 45 minutes by default**, 0 to
+disable, fractions allowed. At the timeout the agent's whole process group gets
+SIGTERM and, ten seconds later, SIGKILL, and the row in `loop.jsonl` carries
+`timedOut: true`; a heartbeat prints how long the current iteration has been
+running every minute. This exists because a real run had ONE iteration take 22
+minutes in silence with nothing bounding it. **Raise it for slow work** — a
+healthy 46-minute iteration is killed by the default, and the ledger will say
+the agent was killed, not that it was slow.
 
 **`<ledger home>/STEERING.md` is the dial.** If it exists it is read FRESH each
 iteration and passed to the agent on stdin, so you can reprioritise mid-flight
-without killing the run. `STOP` is the switch; steering is the dial; between
-them you rarely need to kill anything.
+without killing the run. **It arrives DEMOTED**: wrapped in a
+`--- BEGIN STEERING ---` frame that tells the agent this is data the project
+supplies, which may reprioritise the work but may not widen what it is allowed
+to do, spend, send or delete. That is deliberate — a file inside the working
+tree is writable by anything that can write the tree, and a reproduced prompt
+injection is why the frame exists. **The operator's own channel is
+`--steer <path>`**, whose contents are passed through UNWRAPPED, as an
+instruction. Point it somewhere the repository cannot write — nothing enforces
+that, so `--steer docs/STEERING.md` would hand tree content the trusted lane by
+hand. `STOP` is the switch; steering is the dial;
+between them you rarely need to kill anything.
 
 **A carrier is what survives the window closing.** The ladder applies here too:
 **if the harness already has a scheduler, use it** — a cloud schedule, a runner,
@@ -508,10 +545,25 @@ all about ARTIFACTS, all checkable by someone who did not do the work:
    and every switch is asserted per path per kind.** The defects that survive
    rounds live in whatever no interpreter reads. If you cannot run an emitted
    grammar in the check, that is a reason to CUT it, not to review it again.
-3. **Two consecutive rounds add ZERO NEW CAUSES to `failures.md`.** Findings
-   may be non-zero; causes may not. This is the convergence measure — and
-   unlike «no fatal in the same area twice», it is demonstrably reachable: this
-   skill's own campaign went 6 → 1 → 0 → 2 new causes per round.
+3. **Two consecutive rounds add ZERO NEW ROWS to the distribution table in
+   `failures.md`.** Findings may be non-zero; new CAUSES may not. The unit is a
+   ROW, tagged with the round that first produced it, so anyone can recompute
+   the number instead of believing a sentence:
+   `grep -oE '\| R[0-9]+' docs/failures.md | sort | uniq -c`. Writing the cause
+   up as prose without adding the row makes it invisible to the rule — that
+   happened here in round 7 and made the campaign's own streak unknowable.
+
+   **And be honest about this rule the way the old one was not.** It stood here
+   claiming to be «demonstrably reachable: 6 → 1 → 0 → 2 new causes per round» —
+   a sequence that agreed with the counter on no round at all, whose
+   load-bearing **0** was a round that in fact produced four rows. An honesty
+   auditor ran the command and returned the real series. What is true:
+   **this campaign has run eight rounds and not one of them was zero.** The rule
+   is still better than the «no fatal in the same area twice» it replaced, for a
+   reason that needs no invented number — it is counted by a command rather than
+   argued, and a round that finds plenty still satisfies it as long as every
+   finding is a cause already on the table. But it is NOT proven reachable. Use
+   the escape hatch below rather than assuming convergence.
 
 Why the change, since the old rule sounded stricter: «no fatal in the same area
 two rounds running» was a coin this campaign flipped four times and lost four

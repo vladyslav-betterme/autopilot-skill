@@ -7,9 +7,16 @@ the absence had been inferred from NAMES — «there is no `x-brain.ts`, so ther
 no brain» — and four times that was wrong. Acting on any of them would have
 produced a second implementation beside a working one.
 
-That matters because **«two answers to one question» was 35 % of every defect
-found in that campaign, and its share GREW every review round** while every other
-cause decayed. Two places answer the same question with slightly different
+That matters because **«two answers to one question» is the cause that kept
+recurring after every other one had been closed.** Not a percentage — an
+honesty auditor went looking for the «35 %» that stood here and found no
+measurement behind it. The instances, all in one campaign and all countable:
+two functions answering «where does the ledger live»; two lists of the loop's
+stopping conditions, differing by one; two counters for «new causes per round»,
+neither agreeing with the file that owns the number; the same append property
+measured twice with different results; and a lock whose meaning of «held»
+differed between the library and the shell line the same tool emits. Two places
+answer the same question with slightly different
 rules, and the gap between them is the bug. It is not a code-only failure: two
 dashboards defining «active user» differently, two documents stating the same
 limit, two runbooks for one incident — same shape, same consequence.

@@ -224,37 +224,70 @@ export function findLedger(start) {
  * `mkdir … || exit 0`: a daemon that reports success every interval and never
  * invokes the agent, which is the exact failure its own comment warns about.
  */
+const pidIn = (dir) => Number((() => {
+  try { return fs.readFileSync(path.join(dir, 'pid'), 'utf8'); } catch { return ''; }
+})().trim());
+
+/** Alive, or belongs to somebody we may not signal — both mean «not gone». */
+function holderLives(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch (err) { return err.code === 'EPERM'; }
+}
+
+/** A synchronous pause. The claim below must be verified AFTER any racer has
+ *  had time to write its own pid, and `takeLock` has no async caller. */
+function pause(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const CLAIM_SETTLE_MS = 50;
+
 export function takeLock(dir) {
   for (let attempt = 0; attempt < 3; attempt++) {
+    let created = false;
     try {
-      fs.mkdirSync(dir);           // atomic: exactly one winner
-      fs.writeFileSync(path.join(dir, 'pid'), String(process.pid));
-      return true;
+      fs.mkdirSync(dir);
+      created = true;
     } catch {
-      const pid = Number((() => { try { return fs.readFileSync(path.join(dir, 'pid'), 'utf8'); } catch { return ''; } })().trim());
-      if (!pid) return false;
-      try {
-        process.kill(pid, 0);      // still alive — a real holder
-        return false;
-      } catch (err) {
-        // EPERM means it EXISTS and belongs to someone else. Treating that as
-        // «gone» stole a live holder's lock.
-        if (err.code === 'EPERM') return false;
-        /**
-         * Gone — reclaim ATOMICALLY.
-         *
-         * This was `rmSync` then `mkdirSync`: two syscalls, so a competitor's
-         * remove could land after the winner's create, and BOTH walked away
-         * believing they held it. Measured: 1 contended start in 60 with two
-         * racers, 23 of 25 with sixty-four, and end to end both paid agents
-         * ran. `rename` is one atomic step, so only one process can move the
-         * stale directory aside; the loser finds it gone and races for `mkdir`
-         * honestly, which is the primitive that was correct all along.
-         */
-        const aside = `${dir}.stale-${process.pid}-${attempt}`;
-        try { fs.renameSync(dir, aside); } catch { continue; }
-        try { fs.rmSync(aside, { recursive: true, force: true }); } catch { /* it is out of the way */ }
+      const pid = pidIn(dir);
+      if (!pid) return false;              // mid-creation, or an empty pid: fail CLOSED
+      if (holderLives(pid)) return false;  // a real holder, possibly another user's
+      /**
+       * The holder is gone. Move the stale directory aside — `rename` is one
+       * atomic step, so only one process can move any given instance of it —
+       * and then CHECK WHAT WE MOVED. Deciding «this pid is dead» and removing
+       * the directory are two steps, and in between a competitor can have
+       * reclaimed and created its own live lock at the same path: without this
+       * check we then delete a FRESH lock, which is how eight racers produced
+       * three to six simultaneous holders in the oracle.
+       */
+      const aside = `${dir}.stale-${process.pid}-${attempt}`;
+      try { fs.renameSync(dir, aside); } catch { continue; }
+      const moved = pidIn(aside);
+      if (moved !== pid || holderLives(moved)) {
+        try { fs.renameSync(aside, dir); } catch { /* somebody took the name; it is theirs */ }
+        continue;
       }
+      try { fs.rmSync(aside, { recursive: true, force: true }); } catch { /* it is out of the way */ }
+      continue;
+    }
+    if (created) {
+      fs.writeFileSync(path.join(dir, 'pid'), String(process.pid));
+      /**
+       * THE CLAIM IS NOT THE DIRECTORY, IT IS THE PID FILE.
+       *
+       * Every path above ends with the winner writing its pid here, so if two
+       * processes both believed they created the lock, the file ends up naming
+       * exactly ONE of them. Wait for any racer to have written, then read it
+       * back: whoever is not named lost, and says so. That turns every residual
+       * race — and there are residual races, because «is it stale» and «remove
+       * it» cannot be made one syscall — into at most one holder, which is the
+       * only property that matters (two agents on one ledger is what a second
+       * holder buys).
+       */
+      pause(CLAIM_SETTLE_MS);
+      if (pidIn(dir) !== process.pid) return false;
+      return true;
     }
   }
   return false;

@@ -14,7 +14,7 @@ here without re-deriving the plan.
 | reading the check | it prints ~40 `#`-prefixed lines that look like errors (`refusing to run a shell-shaped check`, `FLAKY`, `STOPPED by STOP`, `RECORD FAILED`). Those are captured output from tests that assert on failure paths. **The exit code is the verdict**, nothing else. |
 | points at production? | No. No `.env*`, no deploy target, no database. The only outward act is `git push`. |
 | push policy | after the check is green, at the end of an iteration — not at campaign end. Standing authorisation, `github.com/vladyslav-betterme/autopilot-skill`. |
-| version control | git, `main`, clean at start. What has landed is in the iteration log, with its SHA. |
+| version control | git, `main`, clean at start. **What has LANDED is in `docs/changelog.md`, newest first, each with its SHA** — the iteration log below stops at I14 and then carries only `prove` receipts, so reading it as the landing record loses the last five landings, round 7's lock fix among them. |
 | how to stop this loop | create `docs/STOP` (whatever text it holds is printed). `prove.mjs` then exits `250` **before running the check**, and the carrier's wrapper exits without invoking the agent. Delete the file to resume. |
 | skills installed | none added for this campaign — the work is prose and zero-dependency Node. |
 | tools reachable | called and seen to work: `codex` and `gemini` CLIs (cross-model skeptics), `launchctl`, `crontab`, `plutil`, `gh`. `tools.mjs` reports what THIS machine has — run it; the number is not a fact about the repo. None of it is needed for this campaign. |
@@ -57,7 +57,7 @@ guard is a new row.
 
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
-| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **no** — conditions 1 and 2 hold (**8 guards of 8** have oracles; every emitted grammar is read by its interpreter, with the GitHub workflow parsed rather than run — recorded in `decisions.md` as considered, not covered). Condition 3 is the open one: the streak is **0 of 2** — round 7 added three causes, the sharpest a fatal in the lock itself | `docs/reviews/campaign-01.md` §§ Round 4, Round 5 |
+| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **no** — conditions 1 and 2 hold (**8 guards of 8** have oracles; every emitted grammar is read by its interpreter, with the GitHub workflow parsed rather than run — recorded in `decisions.md` as considered, not covered). Condition 3 is the open one: the streak is **0 of 2** — round 7 added three causes, the sharpest a fatal in the lock itself | `docs/reviews/campaign-01.md` §§ Round 4, Round 5, **Round 7**, **Cold-start drill 5** |
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
 | 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | **the procedure, because «the orchestrator records it» is unclosable when the resuming session IS the orchestrator:** dispatch a fresh read-only drill, paste its verdict verbatim into `docs/reviews/`, and mark this met only if it answered YES to «could a fresh session CLOSE the work». A drill run by the party it audits does not count | partly — drill 4 (fresh read-only subagent, `docs/**` only) verdict: **NO**. RESUME is clear; CLOSE is not — 8 findings, the two sharpest being a stale guard count in this file (fixed above, same commit) and a «Cold-start drill 3» that `STEERING.md` and this file both name but that has no section anywhere in the ledger | `docs/reviews/campaign-01.md` §§ Cold-start drill, Cold-start drill 2, Cold-start drill 4 |
@@ -78,15 +78,29 @@ It is neither: it is a bounded plan.
 | 3 | If round 8 adds none: **round 9**, same shape. Two in a row and condition 3 is met | |
 | 4 | If three consecutive rounds each add exactly one row of the same kind, that is not convergence — reclassify it as a standing limitation in `decisions.md` and say so out loud | the owner decides |
 
-New rows per round so far: **R1 9 · R2 1 · R3 0 · R5 5 · R6 4** (R4's are folded
-into R5's tags where the fix landed). Round 3 is the existence proof that zero
-is reachable.
+New rows per round: **do not read them here either — run the counter**
+(`grep -oE '\| R[0-9]+' docs/failures.md | sort | uniq -c`). At `8f2d3af` it
+answers R1 9 · R2 1 · R3 4 · R5 5 · R6 4 · R7 3; R4's are folded into R5's tags
+where the fix landed.
+
+**No round has ever been a zero round.** This file claimed «R3 0 … the existence
+proof that zero is reachable» for four rounds, and cold-start drill 5 ran the
+counter: R3 is 4. Nothing in this campaign has yet demonstrated that condition 3
+is satisfiable — that is precisely why it is the open criterion, and a fresh
+session must not be told otherwise. The nearest thing to evidence is the trend
+in what the rounds FIND: round 7's three rows are one lens nobody had used
+(«more than one process»), not three new ways of being wrong.
+
+**When a section here and `docs/STEERING.md` disagree, THIS FILE WINS.**
+`STEERING.md` is the dial for the current iteration and goes stale by design;
+this file is the state. Drill 5 found all four of STEERING's items stale at
+once, including one that ordered a drill that had already run.
 
 ## Parked — blocked on the owner
 
 | what | both options, and their costs |
 |---|---|
-| **Arming the carrier** | `carrier.mjs` prints a launchd or GitHub unit and installs nothing, by decision: arming a scheduled agent spends money unattended. So criterion 2 is met in the «proven it works» sense, not «it is running». To arm it the owner runs the printed `launchctl bootstrap` (or commits the workflow). **Cost of arming, stated: the default interval is 30 minutes → 48 agent invocations a day, indefinitely, until a `STOP` file exists.** Pick a longer `--every` for less. Cost of not arming: the loop lives only as long as a session. **And the disclosure that belongs here rather than in an evidence cell: the GitHub path is emitted as YAML no reader in the check parses, and round 4 found its STOP step INERT while the banner printed all nine paths. Arming it means arming a paid daemon whose kill switch was broken one round ago; launchd is the verified path.** **The loop did not choose, and must not.** |
+| **Arming the carrier** | `carrier.mjs` prints a launchd or GitHub unit and installs nothing, by decision: arming a scheduled agent spends money unattended. So criterion 2 is met in the «proven it works» sense, not «it is running». To arm it the owner runs the printed `launchctl bootstrap` (or commits the workflow). **Cost of arming, stated: the default interval is 30 minutes → 48 agent invocations a day, indefinitely, until a `STOP` file exists.** Pick a longer `--every` for less. Cost of not arming: the loop lives only as long as a session. **And the disclosure that belongs here rather than in an evidence cell: round 4 found the GitHub path's STOP step INERT while the banner printed all nine paths. Arming it means arming a paid daemon whose kill switch was broken — THREE rounds ago now, and covered since by a real YAML reader in `carrier-oracle` that parses the emitted workflow and asserts the agent step is still gated on `steps.stop.outputs.halted`. This row claimed «YAML no reader in the check parses» for three rounds after that reader landed, contradicting three other lines of this same ledger, until cold-start drill 5 caught it; launchd remains the path executed end to end.** **The loop did not choose, and must not.** |
 
 ## Review rounds
 
@@ -195,3 +209,7 @@ is reachable.
 - **prove** `npm run verify` → 1 — R7 hostile input + MCP conformance · 2026-08-14T12:54:12Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R7 fixes · 2026-08-14T12:58:16Z
 - **prove** `npm run verify` → 0 — R7: atomic lock reclaim, wrapper/takeLock parity, stray SIGKILL escalation, day-step cron, timeout overflow · 2026-08-14T13:10:18Z
+- **prove** `npm run verify` → 0 — drill 5: the ledger repair · 2026-08-14T13:29:59Z
+- **prove** `npm run verify` → 1 — R8: the honesty audit's five majors + drill 5's ledger repair · 2026-08-14T13:38:36Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R8: the lock's claim is the pid file, verified after a settle · 2026-08-14T13:44:34Z
+- **prove** `npm run verify` → 0 — R8 landing: honesty audit + drill 5 + the lock's real fix · 2026-08-14T13:47:38Z

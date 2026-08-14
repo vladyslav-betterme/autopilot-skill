@@ -243,7 +243,7 @@ persistence»; an agent that returns instantly could fan out without limit.
 
 20 fatals, **9 distinct causes**, three of which produced 70 %: one question
 answered by two implementations (5), a guard that analyses shell text (6), and
-scope taken from `cwd` (3). New causes per round: **6 → 1 → 0 → 2**.
+scope taken from `cwd` (3). New causes per round: **do not read a sequence here — run the counter**, `grep -oE '\| R[0-9]+' docs/failures.md | sort | uniq -c`. Two prose sequences in this campaign disagreed with it and with each other; drill 5 caught both.
 
 Severity was **not** falling. Round 1's worst outcome was a lie told to a human
 who was present; round 4's was an inert kill switch on an unattended paid
@@ -330,7 +330,7 @@ the number the stopping rule counts.
 | R6-M1 | money | The thrash stop was inert for the workflow SKILL.md recommends: `prove --record` appends a timestamped line every iteration, so the content hash moved every time — eight of eight iterations «moved» with nothing done | a loop whose agent is only `prove --record -- true` | the hash excludes the tool's own receipt |
 | R6-M2 | money | Two projects named `api` produced one launchd label and one install path in `~/Library/LaunchAgents`: arming the second overwrote the first's plist, and the job that kept firing was the FIRST project's | emit from two same-named checkouts | the label carries a hash of the project path |
 | R6-M3…M9 | first run | **The tool prints an instruction that does not work** — seven of them: a usage line offering `--kind cron` deleted two rounds earlier, `<skill>` in a terminal, an `install:` hint that fails from the project root the skill says to stand in, `read /goal.md`, a `python -m pytest` fallback on a machine with only `python3`, a justfile project reporting «no check» while `just check` sat in the repo | follow the README as a stranger and run every line | fixed individually, and covered by a seventh oracle that runs every script and checks what it printed |
-| R6-D1…D16 | honesty | Sixteen claims false or exaggerated, **no new cause**: «four stopping conditions» when there are six, «six harnesses» when seven, a «five-lens council» that was three, «32 bodies» when the corpus is 37 under a ground truth that changed — and the row that exists BECAUSE the count kept rotting, rotted a third time | `npm test`; `grep -c "stopped:" loop.mjs`; count the corpus | the numbers that rot now carry the command instead |
+| R6-D1…D16 | honesty | Sixteen claims false or exaggerated, **no new cause**: «four stopping conditions» when there are six, «six harnesses» when seven, a «five-lens council» that was three, «32 bodies» when the corpus is 37 under a ground truth that changed — and the row that exists BECAUSE the count kept rotting, rotted a third time | `npm test`; `grep -c "stopped:" skills/autopilot/scripts/loop.mjs (7, not the «six» this row asserted — the number rotted again inside the row recording that numbers rot)`; count the corpus | the numbers that rot now carry the command instead |
 
 **The new cause:** «the tool's own printed instruction does not work». It is not
 a bug in what anything DOES — and for an unattended loop the next actor is a
@@ -338,7 +338,7 @@ model reading that line, so it is the same thing. `test/printed-instructions-ora
 is the guard: sixteen invocations, no placeholder outside a usage line, every
 offered flag accepted by its own parser, every path present.
 
-New causes per round so far: **6 → 1 → 0 → 2 → 5 → 1.**
+New causes per round so far: **the counter owns this number** — `grep -oE '\| R[0-9]+' docs/failures.md | sort | uniq -c`, which at `8f2d3af` answers R1 9 · R2 1 · R3 4 · R5 5 · R6 4 · R7 3. The prose sequence that stood here («6 → 1 → 0 → 2 → 5 → 1») agreed with the counter on no round at all, and its «0» was cited in `goal.md` as the proof that a zero round is reachable. It proves nothing: **no round in this campaign has ever been zero.**
 
 ## The install path, run end to end — a check nobody had done
 
@@ -483,6 +483,114 @@ campaign level.* The campaign has no lock of its own. It is recorded in
 `decisions.md` rather than fixed, because the serialisation that exists — one
 human, one terminal — held throughout.
 
+## Cold-start drill 5 — verdict NO (pasted verbatim; the fixes follow it)
+
+A fresh read-only subagent, permitted to read `docs/**` and nothing else, no git
+history, asked: «could a fresh session RESUME this work AND CLOSE it?»
+
+> **Verdict: NO.** A fresh session can RESUME from this ledger — comfortably, in
+> about six minutes of reading. It cannot CLOSE it. The single criterion that
+> gates the campaign (criterion 1, condition 3) is decided by a number, the
+> ledger names the exact command that produces that number, I ran it, and **it
+> returns the opposite of what the ledger asserts beside it** — twice, in two
+> different ways. Separately, the file the ledger designates as "what to work on
+> now" is a full iteration stale on every item it contains, and nothing in the
+> ledger says which file wins when it and `goal.md` disagree.
+>
+> Time to know what to do next: **~4 minutes**. Time to discover that what I was
+> told to do next was already done: ~9 minutes. That gap is the finding.
+
+The thirteen findings, and what happened to each:
+
+| # | finding | status |
+|---|---|---|
+| F1 | **FATAL.** Round 7's three causes were written as `###` sections and **no row was added to the distribution table**, so the counter §7 names (`grep -oE '\| R[0-9]+' …`) reported round 7 as a ZERO round. The stopping rule and the prose beside it gave opposite answers about whether one clean round remains or two | **fixed** — three rows added, tagged `R7`; the counter now answers 3 |
+| F2 | **FATAL for closing.** `goal.md` claimed «R3 0 … Round 3 is the existence proof that zero is reachable». The counter says R3 is **4**. **No round in this campaign has ever been a zero round**, so the one sentence a fresh session would lean on to believe the goal is achievable at all was untrue | **fixed** — the claim is deleted and replaced with the counter and an explicit «no round has ever been zero» |
+| F3 | **FATAL for resuming honestly.** `STEERING.md` — «read fresh every iteration», «what to work on now» — was stale on **all four** items, ordering a drill that had already run, a changelog that was already current, and a measurement round 7 had already made; and it omitted the only open item (round 8). Nothing said which file outranks the other | **fixed** — STEERING rewritten around round 8 / round 9 / drill 6, and `goal.md` now states that it outranks STEERING |
+| F4 | **MAJOR.** The two files gave **opposite** instructions about the only irreversible outward act: `goal.md` «standing authorisation» to push, `STEERING.md` «do not push» | **fixed** — STEERING corrected; the standing authorisation is the true one |
+| F5 | **MAJOR.** The Parked row — the one place the ledger exists to inform the owner's money decision — said the GitHub workflow is «YAML no reader in the check parses» (contradicted three times elsewhere in the same ledger, 29 lines from itself) and that its kill switch was broken «one round ago» (it was three) | **fixed** |
+| F6 | **MAJOR.** The `mkdir` lock decision was left unmarked after round 7 replaced it, so its recorded cost and its «atomic on every filesystem» guarantee both read as current — the second being exactly the claim round 7 refuted | **fixed** — marked superseded, with the successor row beside it and the lesson: the guarantee was true of the PRIMITIVE and false of the SEQUENCE |
+| F7 | **MAJOR.** «32 corpus bodies» — ruled false in round 6, remedied there by carrying the command instead — survived in two more places, one of them the entire justification for keeping the shell analyser. The command answers **37** | **fixed** in both |
+| F8 | **MAJOR.** A printed reproduction command in this file (`grep -c "stopped:" loop.mjs`) does not run from the repo root, and its «corrected» number had rotted again (7, not six) — round 6's own new cause, occurring inside the row that records round 6's new cause | **fixed** |
+| F9 | **MAJOR.** Criterion 1's evidence cited §§ Round 4, Round 5 for a claim that lives in § Round 7 | **fixed** |
+| F10 | **MEDIUM.** The «document stating as an invariant what was never checked» row carried no `R<n>` tag, so the counter skipped the largest category in its own taxonomy — and round 6's sixteen doc claims were never folded into its count of 10 | **fixed** — tagged `R1`, count 26 |
+| F11 | **MEDIUM.** The same property measured twice, thirty lines apart, in one file: 20 concurrent appends and 200 | **fixed** — the smaller measurement now names the larger as the one to cite |
+| F12 | **MEDIUM.** `goal.md`'s iteration log, declared «the loop's state», is BEHIND `changelog.md`: the last five landings, round 7's lock fix among them, are not in it | **fixed** — the fixed-state row now names `changelog.md` as the landing record |
+| F13 | **MINOR.** «Last updated at `0cdb95b`» competes with `changelog.md`'s newest SHA, and a docs-only session cannot break the tie | **fixed in the same commit as this section**, and it will rot again by one commit every time — which is why the row's instruction is to PRODUCE the number, not read it |
+
+**What the drill found healthy, recorded because it is the part that worked:**
+the four-step «how criterion 1 actually closes» plan with an owner per step and
+an explicit escape hatch; the guard table at 8 of 8, with all eight named oracle
+files present on disk; drill 4's dangling «Cold-start drill 3» resolved
+explicitly; criterion 5 verifiable from the ledger alone (`command -v` found all
+six named tools); and the «reading the check» row, which stopped the drill from
+misreading forty `#`-prefixed lines as failures.
+
+**What it could not judge**, in its own words: whether `0cdb95b` is HEAD (git is
+outside its permission by design), whether the R7 omission was deliberate or an
+oversight, whether the eight oracle files contain the differential oracles
+claimed (filenames and one `grep -c` only), whether round 7's fixes are actually
+in the tree — «the campaign's own tenth failure row is precisely *a record
+written from intent, and intent is not the file*» — and four cited files under
+`references/` it is not permitted to open.
+
+**Criterion 4 stays `partly`.** The procedure in `goal.md` is explicit: it moves
+to met only on a YES. Drill 6 runs against the repaired ledger.
+
+## Round 8 — the honesty audit, the mutation test, and the fix that was not one
+
+Four read-only reviewers were dispatched: a critic over round 7's own repairs, a
+mutation tester over all eight oracles, cold-start drill 5 (its verdict is the
+section above), and an honesty auditor over `SKILL.md` and `references/`. **Round
+8 is not clean** — it added three rows.
+
+### The finding that outranks the rest: round 7's fix was not a fix
+
+The lock oracle written IN round 7's own commit passed five consecutive
+standalone runs. Under the full suite, machine loaded, it failed with **three to
+six simultaneous holders in every trial** — worse than the defect it replaced.
+`rename` is atomic; the RECLAIM is not, because «this pid is dead» and «remove
+its directory» are two steps and a competitor reclaims in between. Repaired by
+checking what was moved, and then by making the pid file — not the directory —
+the claim, verified after a settle. Recorded in `failures.md` as «One step made
+atomic, while the RACE spans two», with the second lesson beside it: **a
+concurrency guard that has not been run under load has not been run.**
+
+### The honesty audit — five majors, all against the shipped artifact
+
+| # | finding | status |
+|---|---|---|
+| M1 | **§7's proof that its own stopping rule is reachable is false in every term.** «demonstrably reachable: this skill's own campaign went 6 → 1 → 0 → 2 new causes per round» — the auditor ran the counter `failures.md` prescribes: the real series is 9 · 1 · 4 · 5 · 4, and the load-bearing **0** was a round that produced four rows. It was never true: at the commit that introduced the sentence, R3 already stood at 4. The section that replaced a rule for being unsatisfiable was itself claiming satisfiability with an invented number | **fixed** — the claim is replaced by the counter, by «eight rounds, not one of them zero», and by the reason the rule is still better that needs no number |
+| M2 | «**Four** stopping conditions» in §5b — there are five; the fifth (five sub-second iterations) reproduced in nine seconds. An enumeration is a claim of exhaustiveness | **fixed** |
+| M3 | «Stopping is a mechanism the human owns rather than a request the loop has to notice… enforced at Prove: that is the one step every iteration passes through» — but §2 offered the bare foreground check FIRST, and a bare `npm run verify` never consults `STOP`. In the shape §5b calls common (a self-scheduled wakeup inside a session) the switch was back to being a request | **fixed** — `prove.mjs` is now the primary and the fallback names what it costs |
+| M4 | `loop.mjs` kills a running paid agent at **45 minutes** and the skill never mentioned it — nor the heartbeat, nor that a healthy 46-minute iteration dies by default | **fixed** — documented with the SIGTERM→SIGKILL sequence and «raise it for slow work» |
+| M5 | «`STEERING.md` … passed to the agent on stdin» omitted that it arrives DEMOTED inside an untrusted-data frame, and never mentioned `--steer`, the operator's trusted channel. A reader who needs trusted steering could not learn it exists | **fixed**, including the part the auditor did not ask for: nothing enforces that a `--steer` path is outside the repository |
+| m6 | The two headline percentages («58–68 % of all findings», «35 % of every defect») are derivable from nothing — the auditor grepped for them and found no measurement. This is the artifact's own named defect: «a criterion marked met on evidence nobody can open» | **fixed** — replaced by counts that exist in this file's round table (4 of 4, 2 of 5, 8 of 9, 6 of 14 fatals inside the previous round's repairs) and by the named instances of «two answers to one question» |
+| m7 | The prescribed counter counted the table HEADER (`| Cause | R1 | Trend |`), so R1 was inflated by one — the stopping rule's unit, off by one in its own measurement | **fixed** — the header column is now `count` |
+| m8 | «Cadence: 5 minutes by default» while `loop.mjs` sleeps 15 SECONDS and the carrier example is 30m: three cadences in thirty-five lines, one called «the default» | **fixed** |
+| m9 | `decisions.md` still described the lock as `.carrier.lock` with «no staleness timeout» | **fixed** by drill 5's repair pass |
+
+**What the audit found TRUE** is the larger half of its report and is worth
+recording: every §0 imperative runs clean from the project root; the
+`skill-cleaner` invocation works verbatim and reports the three things claimed;
+`--install any --dry-run` installs nothing; **the capability claim it most wanted
+to break held** — the scaffolded MCP server driven both as stdio JSON-RPC and as
+`--call` gives identical validation text from one `call()`, and
+`notifications/initialized` correctly gets no reply; every `prove.mjs` number in
+§2 is real (250 without running the check, 251 on disagreement, a piped npm
+script refused, a failing number recorded); `carrier.mjs` installs nothing and
+the launchd unit does all three things claimed; `new-skill.mjs` works in both
+documented forms and is honest when there is nowhere to link; and §8's cold-start
+story still matches the latest drill's verdict.
+
+Its one unstated gap, recorded here because it is a real limit: **nothing but the
+agent writes the ledger.** `prove --record` is the only mechanical writer, and
+its line carries the command and exit code, not which criterion moved — so §8's
+«checkpoint into the ledger and compact» is agent discipline end to end. The
+skill says as much («survivable only if the ledger genuinely carries the
+campaign — which is a testable claim, not a hope»), and the cold-start drills are
+that test.
+
 ## What none of it covers
 
 - Windows. No reviewer had a host; `path.join` backslashes in `args`, and the
@@ -490,6 +598,6 @@ human, one terminal — held throughout.
 - Whether any harness actually resolves a relative server path against the
   project root — the claim is now hedged rather than tested.
 - Runtime MCP reload behaviour, for the same reason.
-- Concurrent `prove.mjs --record` runs appending to one `goal.md`.
+- ~~Concurrent `prove.mjs --record` runs appending to one `goal.md`.~~ **Measured in round 7** — 200 concurrent runs with 6 KB notes, 50 with 400 KB, 0 malformed, 0 interleaved, 0 lost. It stays on this list only as a filesystem caveat: `appendFileSync` is one `O_APPEND` write, which holds on APFS and would not on some network mounts, and nothing here would notice.
 - `aerender` actually rendering: existence and architecture were verified,
   headless behaviour was not.
