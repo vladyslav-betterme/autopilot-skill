@@ -4,6 +4,7 @@ What shipped, newest first. One line per landed change: what it does, and what
 was wrong before. **Newest first** — it read oldest-first once and a cold-start
 drill named the oldest change as the most recent thing that landed.
 
+- **595ca1c** — the lock is mutually exclusive. Reclaiming a stale one was `rmSync`+`mkdirSync`, two syscalls, so two processes both held it and **both paid agents ran** (1 contended start in 150, measured); now one atomic `rename`. With it: `releaseLock` checks it still owns the lock, the emitted wrapper stops stealing in three states `takeLock` refuses, a timed-out iteration stops SIGKILLing the NEXT one, `--timeout` refuses what `setTimeout` cannot represent, and a day-of-month cron step is refused because it fires 23 times a year, not 13.
 - **I19 · the first real run** — `loop.mjs` driving a real `claude -p` against
   this repository, the Ralph shape with this skill's stopping conditions. One
   iteration took **22 minutes and printed nothing**, and nothing bounded it: so
