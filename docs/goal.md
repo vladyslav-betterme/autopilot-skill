@@ -156,3 +156,4 @@ guard is a new row.
 - **prove** `npm run verify` → 0, 0 (2 runs) — R6 money fixes pinned · 2026-08-14T11:25:09Z
 - **prove** `npm run verify` → 0 — R6 doc claims · 2026-08-14T11:27:31Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R6: printed instructions oracle · 2026-08-14T11:30:19Z
+- **prove** `npm run verify` → 0 — the platform default, again · 2026-08-14T11:32:48Z

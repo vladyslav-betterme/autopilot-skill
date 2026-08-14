@@ -1100,7 +1100,10 @@ test('two projects with the same directory name get different launchd labels', (
   const labels = ['a', 'b'].map((which) => {
     const d = path.join(tmp(), 'api');
     fs.mkdirSync(d, { recursive: true });
-    const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', `echo ${which}`],
+    // `--kind launchd` explicitly: the default follows the PLATFORM, so on
+    // Linux this emitted a workflow with no plist in it and the match was null.
+    // Second time this campaign — the first was three carrier tests at once.
+    const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', `echo ${which}`, '--kind', 'launchd'],
       { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     return out.match(/<string>(autopilot[^<]*)<\/string>/)[1];
   });
