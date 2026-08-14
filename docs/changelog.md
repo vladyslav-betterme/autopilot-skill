@@ -4,6 +4,14 @@ What shipped, newest first. One line per landed change: what it does, and what
 was wrong before. **Newest first** — it read oldest-first once and a cold-start
 drill named the oldest change as the most recent thing that landed.
 
+- **I9 · a full context is a checkpoint** — write the state into the ledger,
+  commit, compact, resume by re-reading it. Before: the loop ended at 80%.
+- **I8 · `loop.mjs`** — the loop as a process: STOP, `--max`, thrash, a failing
+  agent, and `STEERING.md` read fresh each pass. Before: the loop was doctrine
+  and a unit-emitter, with no program that actually iterated.
+- **I7 · round 3's fixes** (`c90a036`) — the compound guard inverted into a
+  whitelist, the carrier's STOP set taken from the same walk as the loop's, an
+  hourly interval that no longer means every minute.
 - **I6 · round 2's fixes** — `hiddenPipe` follows script delegation, pre/post
   lifecycle scripts and walks up for `package.json`; the carrier watches every
   `STOP` path instead of one; the ledger walk stops below `$HOME`; `new-mcp`

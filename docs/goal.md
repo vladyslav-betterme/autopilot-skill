@@ -50,7 +50,8 @@ fatal or major finding in the same area two rounds running.
 | 1 | guard-can-fire · reachability · honesty auditor · cold-start drill — all read-only, all Opus | 6 | 11 | 10 | every fatal reproduced against a running script; all fixed and pinned before landing (`docs/reviews/2026-08-13.md`) |
 | 2 | cross-model referee (`codex exec --sandbox read-only`) | 0 | 1 | 0 | refuted the central claim; the fix DELETED the useless half of the guard |
 | 2 | re-review of the fixes · cold-start drill 2 — same-model, read-only | 4 | 6 | 2 | every fatal was in round 1's own repairs; all fixed and pinned (78 tests) |
-| 3 | **owed**: `prove`, `ledger`, `new-mcp` — the three areas that carry a fatal in two consecutive rounds | | | | scoped by §7; §3 says a third round means the change was too big, and it was |
+| 3 | one reviewer per owed area — `prove`, `ledger`, `new-mcp` | 5 | 6 | 3 | two were earlier fatals alive under their own fixes; all fixed and pinned (98 tests) |
+| 4 | **owed**: the same three, plus `loop.mjs` (new, unreviewed) | | | | nothing new is added until they come back clean — §3's «the change was too big», accepted |
 
 ## Iteration log
 
@@ -82,3 +83,11 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 0, 0 (2 runs) — loop.mjs + one lock name · 2026-08-14T08:13:14Z
 - **prove** `npm run verify` → 0 — context: checkpoint, not stop · 2026-08-14T08:21:49Z
 - **prove** `npm run verify` → 0 — context checkpoint + description · 2026-08-14T08:22:38Z
+- **I7** — round 3: five fatals across the three owed areas, six majors. The
+  compound guard became a whitelist; the carrier's STOP set came from the walk;
+  `--every 2h` stopped meaning «every minute». `c90a036`.
+- **I8** — `loop.mjs`: the loop as a process, with §7's thrash rule as a
+  stopping condition and `STEERING.md` as the mid-flight dial. `09eb017`.
+- **I9** — §8 is a checkpoint, not a stop: ledger, commit, compact, resume from
+  the ledger. Conditioned out loud on the cold-start drill. `e90d7d8`.
+- **prove** `npm run verify` → 0 — I10 ledger: round 3 recorded · 2026-08-14T08:44:15Z

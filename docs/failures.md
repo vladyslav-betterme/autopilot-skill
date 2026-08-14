@@ -23,6 +23,9 @@ inventing a direction.
 | **`process.exit` before stdout has drained** | 1 | first round |
 | **A discovered value hardcoded at the second call site** | 1 | first round |
 | **A document stating as an invariant what was never checked** | 9 claims | first round — and one of them was written BY this campaign, an hour after the rule against it |
+| **A fix that answers the question with a DIFFERENT function than the one that acts** | 2 | R3 — `path.resolve` checked, `path.join` wrote; `prove` walked up, the carrier did not |
+| **A blacklist of ways to lie, in a grammar that has more** | 1 | R3 — the separator regex; replaced by a whitelist |
+| **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
 
 ## Patterns
 
@@ -101,3 +104,15 @@ message says the ledger must carry a command that reproduces each claim.
 making it. The record is written from intent, and intent is not the file. Run
 the grep that would fail if you had not done it — it takes four seconds, and
 this one took four seconds to catch.
+
+### A fix that answers the question with a DIFFERENT function than the one that acts
+
+Round 1 refused `--dir /opt/x`; round 3 showed the same flag still broken, because
+the containment check used `path.resolve(root, rel)` while the write used
+`path.join(root, rel)` — identical for a relative path, divergent for an
+absolute one. Same shape in the carrier: `prove.mjs` finds STOP by walking up,
+the emitted unit tested nine paths relative to cwd.
+
+**The tell:** the guard and the action are two expressions, not one value. Derive
+the value ONCE and let both use it — a check that recomputes what it is checking
+is checking something else.
