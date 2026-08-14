@@ -61,7 +61,8 @@ what the human clicks, and what you did instead. Do not spend the run trying.
 node <skill>/scripts/new-mcp.mjs <name> -d "<what it drives, and why rung 1 was not enough>"
 ```
 
-Load `mcp-builder` (in the `any`/`api` set of the catalogue) before the server
+Load `mcp-builder` — it is tagged `api`, not `any`, so arm it explicitly:
+`node <skill>/scripts/skills.mjs --install api` before the server
 grows past a handful of tools. The scaffold is deliberately zero-dependency and
 hand-rolled; that is right for four tools and wrong for forty.
 

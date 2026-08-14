@@ -29,6 +29,7 @@
  */
 import fs from 'node:fs';
 import os from 'node:os';
+import url from 'node:url';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { findLedger, findStopFile, takeLock, LOCK_DIR, STOP_FILE } from './lib.mjs';
@@ -44,6 +45,7 @@ for (let i = 0; i < argv.length; i++) {
     ? [argv[i].slice(0, argv[i].indexOf('=')), argv[i].slice(argv[i].indexOf('=') + 1)]
     : [argv[i], null];
   if (name === '--status') { opts.status = true; continue; }
+  if (name === '--help' || name === '-h') { opts.agent = null; opts.status = false; break; }
   if (!VALUE.has(name)) {
     die(`unknown flag «${argv[i]}» — --agent, --max, --sleep, --thrash, --status`);
     process.exit(2);
@@ -106,7 +108,7 @@ if (opts.status) {
   die('usage: loop.mjs --agent "<non-interactive agent command>" [--max 25] [--sleep 15] [--thrash 2]\n' +
     'e.g.  --agent "claude -p \'continue the autopilot loop; read docs/goal.md first\'"\n' +
     'The command must be NON-INTERACTIVE: nobody is there to answer a prompt.\n' +
-    'See what past runs did with:  loop.mjs --status');
+    `See what past runs did with:  node ${(() => { const r = path.relative(process.cwd(), url.fileURLToPath(import.meta.url)); return r && !r.startsWith('../..') ? r : url.fileURLToPath(import.meta.url); })()} --status`);
 } else {
   await run();
 }
@@ -162,7 +164,12 @@ async function run() {
    */
   let child = null;
   let stopping = null;
-  for (const sig of ['SIGINT', 'SIGTERM']) {
+  // SIGHUP too. It had no handler, so a closing terminal took the default
+  // action and killed the supervisor instantly — while the agent, deliberately
+  // detached into its own process group, survived. The lock carries the
+  // SUPERVISOR's pid, so the next carrier tick reclaimed it and started a
+  // SECOND paid agent beside the orphan, with nothing left watching STOP.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(sig, () => {
       if (stopping) {
         // The SECOND one is «I mean it». Registering a handler removes Node's
@@ -199,7 +206,16 @@ async function run() {
     let led = '';
     try {
       for (const f of fs.readdirSync(ledger).filter((x) => x.endsWith('.md')).sort()) {
-        try { led += `${f}:${fs.readFileSync(path.join(ledger, f), 'utf8').length}:${hash(fs.readFileSync(path.join(ledger, f), 'utf8'))}|`; } catch { led += `${f}:unreadable|`; }
+        try {
+          // The tool's OWN receipt is not the agent's work. `prove --record`
+          // appends a timestamped line every iteration — the shape SKILL.md
+          // recommends — so hashing the raw bytes made `ledgerMoved` true
+          // forever and thrash could never fire for the documented workflow:
+          // eight of eight iterations «moved», nothing done, nothing committed.
+          const body = fs.readFileSync(path.join(ledger, f), 'utf8')
+            .split('\n').filter((line) => !/^- \*\*prove\*\* /.test(line)).join('\n');
+          led += `${f}:${body.length}:${hash(body)}|`;
+        } catch { led += `${f}:unreadable|`; }
       }
     } catch { led = 'ledger-unreadable'; }
     let head = '';
@@ -293,7 +309,7 @@ async function run() {
       return;
     }
   }
-  console.log(`\n■ --max reached. The goal is not the counter: read ${path.relative(root, ledger)}/goal.md and say where it stands.`);
+  console.log(`\n■ --max reached. The goal is not the counter: read ${path.join(path.relative(root, ledger) || '.', 'goal.md')} and say where it stands.`);
   append({ n: readLog().length + 1, stopped: 'max iterations' });
 }
 

@@ -10,14 +10,14 @@ here without re-deriving the plan.
 |---|---|
 | check command | `npm run verify` — better, `node skills/autopilot/scripts/prove.mjs --record -- npm run verify`, which appends the true status to the iteration log below |
 | baseline | 2026-08-13, before iteration one: exit 0, `# tests 43 / # pass 43 / # fail 0`. Nothing red predates this campaign. |
-| where it stands NOW | **122 tests, exit 0, at `7df60e5`+1, pushed.** This row exists because the promise «the iteration log carries the current count» was made twice and broken twice — a drill measured 119 against 98 recorded. Update this row, or delete the promise. |
+| where it stands NOW | **Do not read a number here — produce one:** `npm test`, then `git log --oneline -1`. Last updated at `0cdb95b` (2026-08-14). **If that is not `git rev-parse --short HEAD`, the count below is unknown.** This row has been stale three times, twice under a sentence explaining why it must not be; carrying the command is the only version that cannot rot. |
 | reading the check | it prints ~40 `#`-prefixed lines that look like errors (`refusing to run a shell-shaped check`, `FLAKY`, `STOPPED by STOP`, `RECORD FAILED`). Those are captured output from tests that assert on failure paths. **The exit code is the verdict**, nothing else. |
 | points at production? | No. No `.env*`, no deploy target, no database. The only outward act is `git push`. |
 | push policy | after the check is green, at the end of an iteration — not at campaign end. Standing authorisation, `github.com/vladyslav-betterme/autopilot-skill`. |
 | version control | git, `main`, clean at start. What has landed is in the iteration log, with its SHA. |
 | how to stop this loop | create `docs/STOP` (whatever text it holds is printed). `prove.mjs` then exits `250` **before running the check**, and the carrier's wrapper exits without invoking the agent. Delete the file to resume. |
 | skills installed | none added for this campaign — the work is prose and zero-dependency Node. |
-| tools reachable | called and seen to work: `codex` and `gemini` CLIs (cross-model skeptics), `launchctl`, `crontab`, `plutil`, `gh`. `tools.mjs` here reports 18 MCP servers across seven config files; none is needed for this campaign. |
+| tools reachable | called and seen to work: `codex` and `gemini` CLIs (cross-model skeptics), `launchctl`, `crontab`, `plutil`, `gh`. `tools.mjs` reports what THIS machine has — run it; the number is not a fact about the repo. None of it is needed for this campaign. |
 | the review this goal refers to | `docs/reviews/campaign-01.md` — every finding with the command that reproduces it |
 
 ## The goal, in one falsifiable sentence
@@ -44,11 +44,12 @@ guard is a new row.
 
 | guard | what it judges | oracle |
 |---|---|---|
-| `prove`: compound shell + `hiddenPipe` | can this check lie about its status | **yes** — `test/prove-oracle.test.mjs`, ground truth `bash -o pipefail`, 32 bodies |
+| `prove`: compound shell + `hiddenPipe` | can this check lie about its status | **yes** — `test/prove-oracle.test.mjs`, ground truth `bash -e -o pipefail` — «did anything fail», not «what did the last command return». Count the corpus with `grep -c '{ body:' test/prove-oracle.test.mjs` |
 | `new-mcp`: containment + config shape | is this path inside the project; is this a server map | **yes** — `test/new-mcp-oracle.test.mjs`, every printed line against disk, plus «the file landed where `--dir` asked» |
 | the ledger: election vs search | where does this loop's state live | **yes** — `test/ledger-oracle.test.mjs`, bootstrap's announcement against every consumer, ten layouts |
 | `tools.mjs` config readers | is this a server map, and is «absent» absence | **yes** — `test/tools-oracle.test.mjs`, eight layouts read a second time by something that is not it |
 | `loop` thrash detection | did this iteration do anything | **yes** — `test/loop-oracle.test.mjs`, ground truth is the git HEAD plus the ledger's bytes, measured outside the loop |
+| every script's printed instructions | can the next actor run what it was told | **yes** — `test/printed-instructions-oracle.test.mjs`, 16 invocations |
 | carrier schedule expression | does this fire at the period asked | **yes** — `test/carrier-oracle.test.mjs` expands it over a week and measures every gap |
 
 ## Done-criteria
@@ -151,3 +152,7 @@ guard is a new row.
 - **prove** `npm run verify` → 0 — round 5 in the ledger · 2026-08-14T10:20:34Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — all six guards have oracles · 2026-08-14T11:08:09Z
 - **prove** `npm run verify` → 0 — the three-at-three patterns, resolved · 2026-08-14T11:10:22Z
+- **prove** `npm run verify` → 1 — R6 money fixes · 2026-08-14T11:23:00Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R6 money fixes pinned · 2026-08-14T11:25:09Z
+- **prove** `npm run verify` → 0 — R6 doc claims · 2026-08-14T11:27:31Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R6: printed instructions oracle · 2026-08-14T11:30:19Z

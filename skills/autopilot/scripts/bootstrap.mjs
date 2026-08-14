@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import url from 'node:url';
 import { LEDGER_HOMES, statKind, findExisting as scanFor } from './lib.mjs';
 
 const root = process.cwd();
@@ -205,4 +206,8 @@ if (skipped.length) console.log(`left alone : ${skipped.join(', ')} — this pro
 if (EXISTING_CHANGELOG) console.log(`changelog  : append to the existing ${EXISTING_CHANGELOG}`);
 if (EXISTING_BACKLOG) console.log(`backlog    : this project already tracks work in ${EXISTING_BACKLOG} — pick from it`);
 if (!wrote.length) console.log('nothing to do — the ledger already exists.');
-console.log('next       : node <skill>/scripts/skills.mjs   — the skill library, then pick what this project needs');
+const me = path.dirname(url.fileURLToPath(import.meta.url));
+const rel = path.relative(root, me);
+// Runnable AND readable: `node ../../../../../../..` is correct and unusable.
+const shown = rel && !rel.startsWith('../..') ? path.join(rel, 'skills.mjs') : path.join(me, 'skills.mjs');
+console.log(`next       : node ${shown}   — the skill library, then pick what this project needs`);

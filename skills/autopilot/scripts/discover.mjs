@@ -156,8 +156,11 @@ function pythonProject() {
   // Declared, or installed and actually used. `has('tests')` alone emitted
   // `pytest -q` for a unittest project that had never heard of pytest.
   const declaresPytest = /pytest/.test(toml) || has('pytest.ini') || has('tox.ini') || /pytest/.test(read('requirements.txt') ?? '');
+  // `python` does not exist on stock macOS or most current Linux distros, and a
+  // check that cannot run is the invented-check defect wearing a fallback.
   if (declaresPytest && onPath('pytest')) checks.push('pytest -q');
-  else if (declaresPytest) checks.push('python -m pytest -q');
+  else if (declaresPytest && onPath('python3')) checks.push('python3 -m pytest -q');
+  else if (declaresPytest && onPath('python')) checks.push('python -m pytest -q');
   else if ((has('tests') || has('test')) && onPath('pytest')) checks.push('pytest -q');
   return { kind: 'python', checks, allScripts: [] };
 }
@@ -208,6 +211,20 @@ const project = primary
  *  home — and the ledger writer reads THIS list, not one of its own. */
 const memoryHomes = MEMORY_HOMES.filter(has);
 
+/** A tool this project's files ask for and this machine does not have. Without
+ *  this, a justfile project reported «no check» and SKILL.md's flow then told
+ *  the reader to agree an acceptance check — while `just check` sat in the repo.
+ *  «Absent» and «I cannot run it here» are different answers. */
+const missingTools = [
+  ['just', has('justfile') || has('Justfile')],
+  ['make', has('Makefile')],
+  ['deno', has('deno.json') || has('deno.jsonc')],
+  ['pytest', /pytest/.test(read('pyproject.toml') ?? '') || has('pytest.ini')],
+  ['bundle', has('Gemfile')],
+  ['cargo', has('Cargo.toml')],
+  ['go', has('go.mod')],
+].filter(([bin, declared]) => declared && !onPath(bin)).map(([bin]) => bin);
+
 /** Guardrails a loop must not trip. Presence is a signal, not a rule. */
 const signals = {
   hasCI: has('.github/workflows') || has('.gitlab-ci.yml') || has('.circleci'),
@@ -225,4 +242,4 @@ const signals = {
   dirty: (sh('git', ['status', '--porcelain']) ?? '').length > 0,
 };
 
-console.log(JSON.stringify({ root, project, memoryHomes, signals, unreadable }, null, 2));
+console.log(JSON.stringify({ root, project, memoryHomes, signals, unreadable, missingTools }, null, 2));

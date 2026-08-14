@@ -42,6 +42,7 @@ inventing a direction.
 | **A name believed instead of the behaviour behind it** | 3 | R5 — `check` assumed to be the aggregate, `test` matched inside a path, `---` assumed to be frontmatter |
 | **A half-finished artifact left by an unhappy path, which then blocks its own retry** | 3 | new-mcp R2 and R3, new-skill R5 |
 | **A guard that judges a LAYER and not the thing** | 6 | R5 — a shell in front of the runner, a runner inside the shell's script, a flag between the runner and the script name |
+| **The tool's own printed instruction does not work** | 7 | R6 — a usage line offering a deleted flag, a `<skill>` placeholder in a terminal, a hint that fails from the directory the skill says to run in, «read /goal.md» |
 | **A check whose ground truth answers a different question** | 1 | R5 — the oracle used `pipefail`, which reports the LAST command's status, so it could not fire on ten of the thirteen fatals it claimed to cover |
 | **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
 
@@ -206,3 +207,24 @@ that sentence before the corpus.
 **And the repair that generalises:** the oracle now has its own regression test
 — it must FAIL against historic versions with known fatals. A check nobody has
 watched fail is not a check, applied one level up.
+
+### The tool's own printed instruction does not work
+
+Seven in one pass, found by a reviewer who simply followed the documents as a
+stranger and ran every line they were told to run: `usage: … [--kind
+launchd|cron|github]` for a `cron` deleted two rounds earlier; `next : node
+<skill>/scripts/skills.mjs`, which a terminal cannot expand; `install: node
+skills.mjs …`, which fails from the project root the skill tells you to stand
+in; `read /goal.md`, which is `path.relative` returning `''` and never guarded
+at that one call site while every sibling guards it.
+
+None is a bug in what the tool DOES. Every one is a bug in what it tells the
+next actor to do — and for an unattended loop the next actor is a model reading
+that line, so the two are the same thing.
+
+**The tell:** you are writing a string that contains a command. If it is not
+covered by something that RUNS it, it is prose, and prose rots.
+`test/printed-instructions-oracle.test.mjs` now runs every script and checks
+what it printed: no placeholder outside a usage line, every offered flag
+accepted by that script's own parser, every `node …` path present, every «read
+X» present.

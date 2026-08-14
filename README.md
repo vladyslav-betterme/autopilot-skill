@@ -101,7 +101,9 @@ campaign — the skill fires on its own description.
 
 **`checks` is the definition of done for every iteration.** Node, Deno, Python,
 Rust, Go, Gradle, Maven, .NET, Ruby, Elixir, `Makefile` and `justfile` targets,
-plus composer scripts.
+plus composer scripts — and only where the tool is actually installed: a check
+this machine cannot run is the invented check in another coat. What it declines
+to claim for that reason comes back as `missingTools`.
 
 An empty `checks` is a legitimate answer — normal for research, prose and ops —
 but the skill does not take it at face value. It first greps the memory homes
@@ -201,10 +203,10 @@ node <skill>/scripts/loop.mjs --status
 ```
 
 `loop.mjs` iterates **now**, in front of you. What makes it a loop rather than a
-`while true` is that it stops on the ledger's terms: a `STOP` file, `--max`
-iterations (25 by default, never «forever»), **thrash** — two iterations in a
-row with no commit and no ledger change — or an agent that exits non-zero twice
-running. Each stop is written to `agent-logs/loop.jsonl` with its reason, and it
+`while true` is that it stops on the ledger's terms: a `STOP` file, a signal,
+`--max` iterations (25 by default, never «forever»), **thrash** — two
+iterations with no commit and no ledger-content change — an agent that exits
+non-zero twice running, or one that returns in under a second five times. Each stop is written to `agent-logs/loop.jsonl` with its reason, and it
 refuses to start without a `goal.md` at all.
 
 `<ledger home>/STEERING.md` is read fresh every iteration and handed to the
@@ -236,7 +238,7 @@ It scaffolds a zero-dependency stdio server, registers it, and — the part that
 matters for an unattended run — exposes the **same handlers as a CLI**:
 
 ```bash
-node tools/after-effects-mcp/server.mjs --call render '{"comp":"Main"}'
+node tools/after-effects-mcp/server.mjs --call ping '{"text":"hello"}'
 ```
 
 A harness reads its MCP config at **startup**, so a server written mid-run is
@@ -257,7 +259,7 @@ tool, continue after a restart» is a loop that stalled while producing a file.
 | [`scripts/skills.mjs`](skills/autopilot/scripts/skills.mjs) | The skill library, tagged by niche. Installs on request, never wholesale. |
 | [`scripts/new-skill.mjs`](skills/autopilot/scripts/new-skill.mjs) | Write a skill from a win and link it where the harness actually loads from. |
 | [`references/tooling.md`](skills/autopilot/references/tooling.md) | The capability ladder — already reachable, the app's own CLI, a public server, then write one. Plus what a tool result is (untrusted input) and what a server costs (context, every turn). |
-| [`scripts/tools.mjs`](skills/autopilot/scripts/tools.mjs) | MCP servers and plugins across six harnesses — and the honest list of what nothing on disk can tell you. |
+| [`scripts/tools.mjs`](skills/autopilot/scripts/tools.mjs) | MCP servers and plugins across seven config surfaces — and the honest list of what nothing on disk can tell you. |
 | [`scripts/new-mcp.mjs`](skills/autopilot/scripts/new-mcp.mjs) | Write the server that does not exist, register it, and call it **now** — an MCP config is usually only read at startup. |
 | [`scripts/prove.mjs`](skills/autopilot/scripts/prove.mjs) | Run the check and BE the thing that reports its status — no shell, a piped npm script refused, flaky detected, the number written into `goal.md` by the run rather than by the summary. |
 | [`scripts/carrier.mjs`](skills/autopilot/scripts/carrier.mjs) | Emit the launchd or GitHub Actions unit that outlives the session — and install nothing. cron was cut: four findings in three rounds, all in a grammar nothing in the check could execute. |

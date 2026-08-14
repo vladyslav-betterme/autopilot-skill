@@ -21,6 +21,8 @@
  *   node skills.mjs --install any       # install the always-useful set
  *   node skills.mjs --install db,docs --global
  */
+import path from 'node:path';
+import url from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 /**
@@ -258,5 +260,7 @@ const allTags = [...new Set(LIBRARY.flatMap((s) => s.skills.flatMap(([, t]) => t
 console.log(`\ntags: ${allTags.join(' ')}`);
 console.log('pick by project, not by appetite — every installed skill costs context on every turn.');
 console.log('thin outside code and web: for a niche with one entry or none, `find-skills` is the real entry point.');
-console.log('install: node skills.mjs --install any --dry-run   (then drop --dry-run to actually install)');
+const meRel = path.relative(process.cwd(), url.fileURLToPath(import.meta.url));
+console.log(`install: node ${meRel && !meRel.startsWith('../..') ? meRel : url.fileURLToPath(import.meta.url)} --install any --dry-run`);
+console.log('         (then drop --dry-run to actually install)');
 }

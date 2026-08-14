@@ -1070,6 +1070,53 @@ test('a second signal kills an agent that ignores the first', async () => {
   assert.equal(fs.existsSync(path.join(d, '.autopilot.lock')), false, 'the lock was left behind');
 });
 
+test('the carrier locks the PROJECT, not the directory it was emitted from', () => {
+  // The STOP paths were made absolute and project-walked; the `cd` and the lock
+  // two lines below stayed cwd-relative. Emitted from packages/api, the unit
+  // locked packages/api/.autopilot.lock while the loop locks the project's — so
+  // both paid agents ran, concurrently, every interval.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.git'));
+  fs.mkdirSync(path.join(d, 'docs'));
+  run('bootstrap.mjs', d);
+  const sub = path.join(d, 'packages', 'api');
+  fs.mkdirSync(sub, { recursive: true });
+  const wrapper = carrierWrapper(sub, ['--agent', 'echo ran']);
+  // realpath, because /var is a symlink to /private/var on macOS — the same
+  // trap that made round 2's $HOME fix silently inert.
+  const real = fs.realpathSync(d);
+  assert.match(wrapper, new RegExp(`cd "${real.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`), 'the unit cd\'s to the emit directory');
+  // …and with the project's lock held, the emitted unit must not run the agent.
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  fs.writeFileSync(path.join(d, '.autopilot.lock', 'pid'), String(process.pid));
+  execFileSync('/bin/sh', ['-c', wrapper.replace('echo ran', `echo ran >> ${JSON.stringify(path.join(d, 'ran.txt'))}`)], { cwd: sub });
+  assert.equal(fs.existsSync(path.join(d, 'ran.txt')), false, 'two agents on one ledger');
+});
+
+test('two projects with the same directory name get different launchd labels', () => {
+  // One label meant one install path in ~/Library/LaunchAgents: arming the
+  // second silently overwrote the first's plist, launchctl refused the
+  // duplicate, and the job that kept firing was the FIRST project's.
+  const labels = ['a', 'b'].map((which) => {
+    const d = path.join(tmp(), 'api');
+    fs.mkdirSync(d, { recursive: true });
+    const out = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', `echo ${which}`],
+      { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.match(/<string>(autopilot[^<]*)<\/string>/)[1];
+  });
+  assert.notEqual(labels[0], labels[1], `both projects emitted «${labels[0]}»`);
+});
+
+test('a loop whose agent only records the check still thrashes', () => {
+  // `prove --record` appends a timestamped line every iteration — the shape
+  // SKILL.md recommends — so hashing the raw ledger made ledgerMoved true
+  // forever: eight of eight iterations «moved», nothing done, nothing
+  // committed, and the only stop that tells working from spinning was inert.
+  const d = looped();
+  const agent = `node ${JSON.stringify(path.join(SCRIPTS, 'prove.mjs'))} --record --note 'no work happened' -- true`;
+  assert.equal(loopStatus(d, ['--agent', agent, '--max', '8', '--sleep', '0']), 3);
+});
+
 test('a STOP that is a broken symlink halts the carrier, not only the loop', () => {
   // lib.mjs uses lstat ON PURPOSE — «a broken symlink named STOP is a stop file
   // that existsSync calls absent». Both emitted carriers used `[ -e ]`, which

@@ -359,9 +359,11 @@ node <skill>/scripts/new-skill.mjs <name> -d "..." < body.md   # you write the b
 ```
 
 It lands in the shared skills home and is symlinked into every agent directory
-this project has, so it is **live for the current session** — read the file it
-prints and apply it now, on the very next iteration. Waiting for a restart is
-how a skill becomes a file nobody opens.
+this project has. **Usable immediately, indexed after a restart** — that is not
+the same thing, and the tool says so where the docs used to say «live in the
+current session»: READ the file it prints and follow it on the very next
+iteration. A harness that indexes skills at startup will list it later; waiting
+for that is how a skill becomes a file nobody opens.
 
 Three things or it will not fire (`references/distillation.md`):
 
@@ -442,12 +444,14 @@ It prints a launchd job or a GitHub Actions workflow — and **installs
 nothing**. (`--kind cron` was removed: four findings in three rounds, all in a
 grammar nothing in the check could execute.) Arming a job that runs an agent unattended spends money on
 a schedule, which is §6's to approve, so the install command is printed for a
-human to run. Every unit it emits `cd`s to the project first (a scheduler starts in `/`),
-holds an overlap lock whose holder's PID is written into it, and halts on the
-STOP paths **the same walk finds**. One exception, printed on the unit itself:
-a GitHub workflow runs on somebody else's machine, so it can only see a STOP
-that has been **committed and pushed**. That is the difference between it and
-launchd, and it is the reason launchd is the verified path. Read the log after the first fire, or you have armed something you have
+human to run. **The launchd unit** `cd`s to the project the ledger belongs to (a scheduler
+starts in `/`), holds an overlap lock carrying its holder's PID, and watches
+every STOP path the loop's own walk finds. **The GitHub unit does none of those
+three:** the checkout supplies the directory, `concurrency:` supplies the
+overlap lock, and it can only see a STOP that has been **committed and pushed**.
+Both facts are printed on the unit itself. launchd is the verified path; the
+workflow is the one that survives a closed laptop, and those are different
+properties. Read the log after the first fire, or you have armed something you have
 never watched run.
 
 **Draw the next item from the ledger, not from memory.** If the only thing that

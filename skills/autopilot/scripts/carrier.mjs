@@ -24,6 +24,13 @@ import path from 'node:path';
 import { findLedger, projectDirs, LEDGER_HOMES, LOCK_DIR, STOP_FILE } from './lib.mjs';
 
 const root = process.cwd();
+/** This file's own path, so the install line it prints can be pasted. It said
+ *  `node <skill>/scripts/carrier.mjs`, and a terminal cannot expand that. */
+const selfPath = (() => {
+  const abs = new URL(import.meta.url).pathname;
+  const rel = path.relative(root, abs);
+  return rel && !rel.startsWith('../..') ? rel : abs;
+})();
 const argv = process.argv.slice(2);
 const flag = (name, fallback = null) => {
   const i = argv.indexOf(name);
@@ -42,7 +49,7 @@ const die = (msg) => { console.error(msg); process.exit(2); };
 
 const agent = flag('--agent');
 if (!agent) {
-  die('usage: carrier.mjs --agent "<headless agent command>" [--every 30m] [--kind launchd|cron|github]\n' +
+  die('usage: carrier.mjs --agent "<headless agent command>" [--every 30m] [--kind launchd|github]\n' +
     'e.g.  --agent "claude -p \'continue the autopilot loop; read docs/goal.md first\'"\n' +
     'The command must be NON-INTERACTIVE: a carrier cannot answer a prompt.');
 }
@@ -56,11 +63,29 @@ const minutes = Number(m[1]) * (/^h/i.test(m[2] ?? 'm') ? 60 : 1);
 if (minutes < 1) die('--every must be at least 1 minute');
 
 const kind = flag('--kind', process.platform === 'darwin' ? 'launchd' : 'github');
-const label = `autopilot.${path.basename(root).replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+/** Two checkouts both called «api» produced one label and one install path in
+ *  ~/Library/LaunchAgents: arming the second silently overwrote the first's
+ *  plist, launchctl refused the duplicate label, and the job that kept firing
+ *  was the FIRST project's — on its repo, with its agent command, while the
+ *  operator believed they had armed the second. */
+const label = `autopilot.${path.basename(root).replace(/[^a-zA-Z0-9.-]/g, '-')}-${
+  (() => { let h = 5381; for (const ch of root) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); })()}`;
 // The unit's STOP path is written once, into a file that will run for weeks —
 // so an ambiguous ledger is resolved by the human now, not by a guess baked
 // into a daemon.
-const ledgers = findLedger(root).homes;
+const found = findLedger(root);
+const ledgers = found.homes;
+/**
+ * The PROJECT, not the directory the carrier happened to be run from.
+ *
+ * The STOP paths were made absolute and project-walked one round ago; the `cd`
+ * and the lock two lines below were left cwd-relative. Emitted from
+ * `packages/api`, the unit locked `packages/api/.autopilot.lock` while the loop
+ * locks the project's — so both agents ran, concurrently, every interval, under
+ * a banner promising an overlap lock. The log directory went to the same wrong
+ * place, so `--status` read a file the carrier never wrote.
+ */
+const project = found.homes.length ? found.root : root;
 if (ledgers.length > 1) {
   die(`more than one goal.md is in scope, and the emitted unit can only watch one:\n` +
     `${ledgers.map((l) => `  ${path.relative(root, l) || '.'}`).join('\n')}\n` +
@@ -154,7 +179,7 @@ const cronExpr = kind === 'github' ? cronFor(minutes) : '';
  *     below says to delete it, and that is the whole recovery path.
  */
 const wrapper = [
-  `cd ${JSON.stringify(root)} || exit 1`,
+  `cd ${JSON.stringify(project)} || exit 1`,
   `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do { [ -e "$s" ] || [ -L "$s" ]; } && exit 0; done`,
   `mkdir ${LOCK_DIR} 2>/dev/null || { kill -0 "$(cat ${LOCK_DIR}/pid 2>/dev/null)" 2>/dev/null && exit 0; rm -rf ${LOCK_DIR}; mkdir ${LOCK_DIR} || exit 0; }`,
   `echo $$ > ${LOCK_DIR}/pid; trap 'rm -rf ${LOCK_DIR}' EXIT`,
@@ -179,8 +204,8 @@ const LAUNCHD = () => `<?xml version="1.0" encoding="UTF-8"?>
   </array>
   <key>StartInterval</key><integer>${minutes * 60}</integer>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>${path.join(root, logDir, 'carrier.log')}</string>
-  <key>StandardErrorPath</key><string>${path.join(root, logDir, 'carrier.log')}</string>
+  <key>StandardOutPath</key><string>${path.join(project, logDir, 'carrier.log')}</string>
+  <key>StandardErrorPath</key><string>${path.join(project, logDir, 'carrier.log')}</string>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}</string></dict>
 </dict>
@@ -250,7 +275,7 @@ console.log(EMIT());
 
 const install = {
   launchd: `  mkdir -p ~/Library/LaunchAgents\n` +
-    `  node <skill>/scripts/carrier.mjs --agent … > ~/Library/LaunchAgents/${label}.plist\n` +
+    `  node ${selfPath} --agent … > ~/Library/LaunchAgents/${label}.plist\n` +
     `  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${label}.plist\n` +
     `  launchctl kickstart -p gui/$(id -u)/${label}      # fire once now, and watch ${logDir}/carrier.log\n` +
     `  launchctl bootout gui/$(id -u)/${label}           # remove it`,
