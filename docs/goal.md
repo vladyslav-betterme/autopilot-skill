@@ -148,3 +148,4 @@ guard is a new row.
 - **prove** `npm run verify` → 0 — R5: nested layers, signals, symlink STOP · 2026-08-14T09:48:03Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R5 loop+carrier pinned · 2026-08-14T09:49:28Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — carrier oracles: YAML parsed, schedule expanded · 2026-08-14T10:19:12Z
+- **prove** `npm run verify` → 0 — round 5 in the ledger · 2026-08-14T10:20:34Z

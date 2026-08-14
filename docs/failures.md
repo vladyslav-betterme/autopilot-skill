@@ -38,6 +38,11 @@ inventing a direction.
 | **A grammar emitted for an interpreter the check cannot run** | 4 | R3, R4 — cron and YAML; the surface was CUT rather than fixed a fifth time |
 | **Writing the very syntax the comment warns about, into a comment** | 2 | 2026-08-13 and 2026-08-14, same file: a cron step ends a block comment |
 | **A commit whose message describes work the commit does not contain** | 1 | 2026-08-14 — `git add` aborted on a path the rename had already staged, and the commit had only that rename left |
+| **A check invented from a file merely being present** | 5 | R5 — a Gemfile, a `tests/` directory, a `deno.json` holding a formatter width, a regex over a Makefile |
+| **A name believed instead of the behaviour behind it** | 3 | R5 — `check` assumed to be the aggregate, `test` matched inside a path, `---` assumed to be frontmatter |
+| **A half-finished artifact left by an unhappy path, which then blocks its own retry** | 3 | new-mcp R2 and R3, new-skill R5 |
+| **A guard that judges a LAYER and not the thing** | 6 | R5 — a shell in front of the runner, a runner inside the shell's script, a flag between the runner and the script name |
+| **A check whose ground truth answers a different question** | 1 | R5 — the oracle used `pipefail`, which reports the LAST command's status, so it could not fire on ten of the thirteen fatals it claimed to cover |
 | **A guard whose scope is `cwd` when the tool it guards resolves differently** | 2 | R3 — `hiddenPipe` vs npm's own walk-up; carrier STOP vs the loop's |
 
 ## Patterns
@@ -185,3 +190,19 @@ six ledger repairs. It was pushed that way.
 printed, or `git status` after it. The campaign's own rule — «check that the
 thing actually landed» — is usually read as being about deploys. It is about
 commits too: `git show --stat` against the message is four seconds.
+
+### A check whose ground truth answers a different question
+
+The `prove` oracle was built to be the stopping rule's mechanism, and a reviewer
+showed it passing against a binary with two known fatals. Its ground truth,
+`bash -o pipefail`, answers «what did the last command return»; the question is
+«did anything fail». Twenty-two of thirty-two rows had truth 0, so the property
+could not fire on them.
+
+**The tell:** you cannot say, in one sentence and without hedging, what your
+ground truth would answer for an input where it disagrees with a human. Write
+that sentence before the corpus.
+
+**And the repair that generalises:** the oracle now has its own regression test
+— it must FAIL against historic versions with known fatals. A check nobody has
+watched fail is not a check, applied one level up.

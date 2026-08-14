@@ -266,6 +266,58 @@ on all 32 corpus bodies; with it disabled, prove reports success for **six**
 failing checks. A recommendation strong enough to act on is strong enough to
 test first.
 
+## Round 5 (08-14) — the three unreviewed scripts, and a re-review of round 4
+
+**Fourteen fatals.** The prediction held exactly: a surface nobody had looked at
+yields round-1-quality bugs, and the fixes of the previous round yield their own.
+
+### The three scripts no reviewer had ever opened
+
+| # | Area | What | Reproduce it | Fixed by |
+|---|---|---|---|---|
+| R5-F1 | discover | A Gemfile with neither `spec/` nor a Rakefile produced a check that globbed `test/**/*_test.rb`, found nothing, required nothing and **exited 0** — a definition of done that cannot fail, on every iteration of every Jekyll site | `printf 'source "x"' > Gemfile` then `discover.mjs` | the fallback is deleted; no spec and no Rakefile means an honest none |
+| R5-F2 | discover | `pytest -q` was emitted because a `tests/` directory existed, and `deno test -A` because a `deno.json` held a formatter width — commands for tools that are not installed, red from iteration one | a unittest project with `requirements.txt`; a Node project with `{"fmt":{"lineWidth":100}}` | declared **and** on PATH, or not claimed |
+| R5-F3 | discover | The Makefile check was a regex over the file, so it invented `make check` for a target inside a `define` block (make exits 2) and MISSED `check test:` and a target arriving through `include`, handing the loop `make build` as its definition of done | both fixtures above | it asks make: `make -n <target>` runs nothing and answers |
+| R5-F4 | discover | An aggregate named `check` DELETED the test suite from the definition of done. SvelteKit's own manifest is `"check": "tsc && cd ./test/types && tsc"` beside a real `test` | that package.json, then `discover.mjs` | an aggregate stands alone only over what it visibly INVOKES; and «invokes» is a runner calling it, not the word appearing in a path |
+| R5-F5 | discover | `JSON.parse` in a bare catch: a package.json with a UTF-8 BOM — what PowerShell writes, what npm reads fine — was reported as «unknown project, no check, no scripts», silently | a BOM'd manifest | BOM and comments are stripped, and an unreadable manifest is a reported finding |
+| R5-M1 | skills | `--json` ran before the install block, so `--install nosuchtag --json` printed `[]` and exited 0 where the same command without `--json` refuses — and `--install any --json` installed nothing, successfully | `skills.mjs --install nosuchtag --json` | the two flags do not combine |
+| R5-M2 | new-skill | The `mkdirSync` sat outside the try, so a `.claude/skills` that is a dangling symlink threw uncaught AFTER the skill was written — and the retry refused, because it now existed | `ln -s ../.agents/skills-gone .claude/skills` | inside the try; the skill is created and the link failure is reported |
+| R5-M3 | new-skill | A body opening with `---` (a legal markdown thematic break) had its whole first section stripped as frontmatter, silently, exit 0 | pipe a body starting with `---` | only a block whose first line is `key:` is frontmatter |
+
+### The re-review of round 4's fixes — the layers nest
+
+| # | Area | What | Fixed by |
+|---|---|---|---|
+| R5-F6 | prove | `cat <(node -e "process.exit(1)")` — process substitution hides a status like a pipe, and was not a separator to the scanner | added, with `>(…)` |
+| R5-F7 | prove | `bash -cx '… \| tail'` — the `-c` pattern required `c` to be LAST; short options combine. Round 4's fix moved the hole from «options take values» to «options combine» | any cluster containing `c` |
+| R5-F8 | prove | `sh -c 'npm run direct'` — argv[0] was `sh`, so the npm-script guard never ran | the guards recurse through each other, depth-bounded |
+| R5-F9 | prove | `"verify": "sh -c '… \| tail'"` — the scanner correctly treats quoted text as data, and that data was a shell script | the same recursion, the other way |
+| R5-F10 | prove | `npm run --silent inner` — the graph walk captured «--silent» as the script name | flags are skipped |
+| R5-F11 | prove | `\|\| exit 0` was permitted **by name**, beside a message saying `\|\| exit` cannot hide a failure | `exit 0` is refused; `exit 1`, `exit $?` are not |
+| R5-F12 | loop | Ctrl-C during the `--sleep` gap killed nothing and started a fresh PAID agent — 15 seconds of every iteration by default | the gap is interruptible, and the timer is CLEARED so the process actually leaves |
+| R5-F13 | loop | An agent that ignores SIGTERM made the loop killable only by SIGKILL, because registering a handler removes Node's default terminate | a second signal kills the agent's process GROUP and exits |
+| R5-F14 | carrier | A STOP that is a broken symlink halted the loop and NOT the carrier: `lib` uses `lstat` on purpose, both emitted units used `[ -e ]` | `[ -e "$s" ] \|\| [ -L "$s" ]` |
+
+Majors with them: the GitHub banner printed nine absolute paths from the
+author's laptop while the workflow checks the checkout; `--every --kind github`
+silently scheduled every 30 minutes because the value was missing; `EPERM` from
+`process.kill(pid, 0)` was read as «gone» and stole a live holder's lock; a
+compound `--agent` orphaned the real agent on Ctrl-C.
+
+### And the finding about the check itself
+
+**The oracle was decorative.** Ground truth was `bash -o pipefail`, which
+answers «what did the LAST command return»: 22 of 32 corpus rows had truth 0,
+including **ten of the thirteen labelled as round 1–4 fatal reproductions**. The
+reviewer proved it by running the round-4 oracle against the pre-round-4
+`prove.mjs` — the binary with both round-4 fatals — and it passed.
+
+Ground truth is `bash -e -o pipefail` now («did any command fail»), the known
+divergence is a labelled row, and **the oracle has its own regression test: it
+must FAIL against two historic versions.** It does. That test is the answer to
+«how do you know a check is load-bearing», and it is the one thing from this
+campaign most worth stealing.
+
 ## The install path, run end to end — a check nobody had done
 
 Everything above tests the scripts where they are developed. The thing people
