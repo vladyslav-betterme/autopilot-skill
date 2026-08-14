@@ -1,16 +1,18 @@
 ---
 name: autopilot
 description: >-
-  Use to run autonomous work on ANY project, of any kind, until a goal is
-  actually met — «працюй автономно», «продовжуй», /loop, an unattended
-  campaign, or a request to set a repo up so an agent can drive it. Code,
-  documents, data, research, infrastructure, ops: it discovers what «done»
-  means here, arms itself with the skills AND the reach this project needs —
-  public skills, MCP servers, plugins, connectors, and writing the MCP server
-  itself when none exists for the thing it has to drive — loops until every
-  done-criterion is verified by someone that is not you, records every win,
-  failure and decision, and writes repeated wins into new skills it then uses
-  in the same session.
+  Use to run autonomous work on ANY project until a goal is actually met —
+  «працюй автономно», «продовжуй», /loop, a Ralph-style loop, an unattended
+  campaign, or setting a repo up so an agent can drive it. Code, documents,
+  data, research, infrastructure, ops: it discovers what «done» means here,
+  arms itself with the skills AND the reach the work needs (public skills, MCP
+  servers, plugins, connectors — writing the MCP server when none exists), and
+  iterates as a real process that stops on a STOP file, a budget or thrash.
+  Steerable mid-flight, carryable by launchd/cron/CI so it outlives the
+  session, and on a full context it checkpoints into its ledger and compacts
+  instead of stopping. Every check is run by something that is not writing the
+  summary; every criterion is verified by someone that is not you; every win,
+  failure and decision is recorded, and repeated wins become new skills.
 ---
 
 # Autopilot
@@ -493,8 +495,33 @@ GOAL itself every third iteration — is this still the thing worth doing, and i
 it still true? And when two criteria contradict, that is a defect in the goal,
 not an iteration to attempt: stop, record it, ask.
 
-## 8. Context
+## 8. Context — a checkpoint, not a stop
 
-At **80 %** of the window: stop the iteration, write the state into `goal.md`
-and the ledger, commit what is green, say where you stopped. Pushing past it
-produces the failure where the summary is confident and the work is half-landed.
+At **80 %** of the window the loop does NOT end. It checkpoints, in this order:
+
+1. **Get the state out of context and into the ledger.** Which criterion moved,
+   what proves it, what is next, what is parked — into `goal.md`; the lesson
+   into `failures.md`; the choice into `decisions.md`. Then **commit what is
+   green**. Everything that exists only in the window is about to stop existing.
+2. **Compact.** In Claude Code that is `/compact`; most harnesses also summarise
+   on their own when the window fills. If yours cannot, hand the campaign to a
+   fresh session — the ledger is the handoff and needs no other briefing.
+3. **Resume from the LEDGER, not from the summary.** The first act after
+   compaction is re-reading `goal.md`. A summary is a claim about what happened,
+   written by the context that is being discarded; the ledger is the record, and
+   the two disagree exactly where it matters.
+
+**Why this is safe here and is not safe in general.** Compaction loses whatever
+only the window knew, so it is survivable only if the ledger genuinely carries
+the campaign — which is a testable claim, not a hope. **Run the cold-start drill
+(§3) before you rely on this**: give a fresh subagent nothing but the ledger and
+ask it to name the next action. On this repo the first drill answered
+«resumable enough to start, not to close», and named seven things that would
+have been lost. They were fixable *because* someone checked. If the drill fails,
+compaction will lose work — fix the ledger first, then compact.
+
+**The structural version costs nothing:** `loop.mjs` starts a fresh agent
+process per iteration, so context never accumulates across iterations at all.
+A long campaign driven that way never reaches 80 % in the first place — the
+window is the concern of one iteration, and the ledger is the concern of the
+campaign.

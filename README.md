@@ -64,7 +64,10 @@ flowchart LR
     W -- no --> Q
     Q -- no --> P
     Q == yes ==> Z
-    iter -. "money · irreversible · nothing moved twice · 80% context" .-> Z
+    K["<b>checkpoint</b> — ledger, commit,<br/>compact, resume from the ledger"]
+    iter -. "80% context" .-> K
+    K ==> P
+    iter -. "money · irreversible · nothing moved twice" .-> Z
 ```
 
 ## Quick start
@@ -283,6 +286,11 @@ tool, continue after a restart» is a loop that stalled while producing a file.
   stops when everything left is parked.
 - **Stop on a criterion, not on a mood** — and on **thrash**: two iterations with
   nothing advanced is a wrong premise, not persistence.
+- **A full context is a checkpoint, not a stop.** Write the state into the
+  ledger, commit what is green, compact, and resume by re-reading the ledger —
+  never from the summary written by the context being discarded. Safe only
+  because a cold-start drill proves the ledger carries the campaign; run it
+  first, or compaction will lose work.
 
 ## Tests
 
