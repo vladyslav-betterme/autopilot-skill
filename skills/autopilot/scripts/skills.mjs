@@ -170,22 +170,36 @@ const selected = LIBRARY
   .map((src) => ({ ...src, skills: src.skills.filter(([, tags]) => matches(tags)) }))
   .filter((src) => src.skills.length);
 
+/**
+ * Everything below runs inside `main()` for one reason: `process.exit` after
+ * writing to stdout DROPS whatever has not drained. On a pipe that is a silent
+ * truncation at the buffer size, with status 0 — the same defect that was
+ * called fatal in the generated MCP server and then found again in
+ * `tools.mjs --json`. Found here by grepping for the SHAPE instead of waiting
+ * for a third reviewer to hit it. `return` + `process.exitCode` lets Node exit
+ * on its own, after the writes.
+ */
+main();
+function main() {
 if (has('--json')) {
   console.log(JSON.stringify(selected, null, 2));
-  process.exit(0);
+  process.exitCode = 0;
+  return;
 }
 
 if (has('--install')) {
   if (!wants.length) {
     console.error('refusing to install everything — pass tags, e.g. --install any,react\n' +
       'run without --install to see the catalogue and its tags.');
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   // An unknown tag used to select nothing and exit 0, which reads exactly like
   // «installed». Refuse the empty SELECTION, not just the empty argument.
   if (!selected.length) {
     console.error(`no skill carries ${wants.join(' or ')} — run without --install to see the tags.`);
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   const scope = has('--global') ? ['-g'] : [];
   const dry = has('--dry-run');
@@ -207,15 +221,18 @@ if (has('--install')) {
   }
   if (dry) {
     console.log('\n--dry-run: nothing was installed.');
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
   console.log('\nThese are third-party skills and they run with full agent permissions.');
   console.log('Read what you installed before the loop starts using it.');
   if (failed.length) {
     console.log(`\nFAILED: ${failed.join(', ')} — install them by hand or drop them.`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
-  process.exit(0);
+  process.exitCode = 0;
+  return;
 }
 
 const width = Math.max(...selected.flatMap((s) => s.skills.map(([n]) => n.length)), 0);
@@ -231,3 +248,4 @@ console.log(`\ntags: ${allTags.join(' ')}`);
 console.log('pick by project, not by appetite — every installed skill costs context on every turn.');
 console.log('thin outside code and web: for a niche with one entry or none, `find-skills` is the real entry point.');
 console.log('install: node skills.mjs --install any --dry-run   (then drop --dry-run to actually install)');
+}

@@ -73,3 +73,4 @@ fatal or major finding in the same area two rounds running.
   containment. Plus six majors and `--note`. 78 tests. Landed at `d2ab924`+1.
 - **prove** `npm run verify` → 0 — I6 round-2 fixes: 4 fatal, 6 major, 78 tests · 2026-08-14T07:45:40Z
 - **prove** `npm run verify` → 0 — distilled: re-run the reviewer's own repro · 2026-08-14T07:47:46Z
+- **prove** `npm run verify` → 0 — the exit-after-stdout shape, hunted everywhere it lives · 2026-08-14T07:49:53Z
