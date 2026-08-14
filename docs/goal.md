@@ -49,13 +49,13 @@ guard is a new row.
 | the ledger: election vs search | where does this loop's state live | **yes** — `test/ledger-oracle.test.mjs`, bootstrap's announcement against every consumer, ten layouts |
 | `tools.mjs` config readers | is this a server map, and is «absent» absence | no |
 | `loop` thrash detection | did this iteration do anything | no |
-| carrier schedule expression | does this fire at the period asked | no |
+| carrier schedule expression | does this fire at the period asked | **yes** — `test/carrier-oracle.test.mjs` expands it over a week and measures every gap |
 
 ## Done-criteria
 
 | # | criterion | how it is checked | met? | evidence |
 |---|---|---|---|---|
-| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **no** — 3 guards of 6 have oracles; the workflow is parsed by no reader; the streak is 0 of 2 | `docs/reviews/campaign-01.md` §§ Round 4, Convergence analysis |
+| 1 | The three §7 conditions hold | the guard table above · a YAML reader over the emitted workflow · two rounds with no new row in `failures.md` | **no** — 4 guards of 6 have oracles; the workflow IS parsed now (ruby/python, skipped with a reason where neither exists); the streak is 0 of 2, reset by round 5 | `docs/reviews/campaign-01.md` §§ Round 4, Round 5 |
 | 2 | The loop survives the session it started in: a carrier that outlives the window, and a stop that is a file rather than a promise | the emitted unit is executed once and its effect observed; `STOP` halts a real run | yes | the plist was `launchctl bootstrap`ed, kickstarted, wrote its timestamp, booted out; `STOP` halts both the wrapper and `prove.mjs`, from a subdirectory; 7 tests |
 | 3 | The evidence step is mechanical: the check is run by something that reads its own exit code and writes the result, so «pasted output» cannot be narrated | a test where the piped form reports 0 and the runner reports the true non-zero | yes | `false \| tail` → 0 while `prove -- false` → 1; a piped npm script refused; flaky → 251; 12 tests |
 | 4 | The ledger is provably resumable: a subagent given ONLY the ledger names the correct next action | **the procedure, because «the orchestrator records it» is unclosable when the resuming session IS the orchestrator:** dispatch a fresh read-only drill, paste its verdict verbatim into `docs/reviews/`, and mark this met only if it answered YES to «could a fresh session CLOSE the work». A drill run by the party it audits does not count | partly — drills 1 and 2 both «start but not close», 14 findings between them, all fixed. Drill 3 is running against this version | `docs/reviews/campaign-01.md` §§ Cold-start drill, Cold-start drill 2 |
@@ -147,3 +147,4 @@ guard is a new row.
 - **prove** `npm run verify` → 0 — R5 fixes pinned · 2026-08-14T09:43:44Z
 - **prove** `npm run verify` → 0 — R5: nested layers, signals, symlink STOP · 2026-08-14T09:48:03Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R5 loop+carrier pinned · 2026-08-14T09:49:28Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — carrier oracles: YAML parsed, schedule expanded · 2026-08-14T10:19:12Z
