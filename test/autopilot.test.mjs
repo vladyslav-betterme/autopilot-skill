@@ -961,6 +961,95 @@ test('STEERING.md reaches the agent, read fresh every iteration', () => {
   assert.match(fs.readFileSync(path.join(d, 'got.txt'), 'utf8'), /criterion 3/);
 });
 
+test('SIGTERM stops the loop instead of starting another paid agent', async () => {
+  // run() was fully synchronous, so the handlers never got a turn — while
+  // REGISTERING them had already removed Node's default terminate action. Ctrl-C
+  // killed the child and the loop immediately started a fresh paid agent; only
+  // SIGKILL stopped it, and SIGKILL left the lock, which silently disables the
+  // carrier («mkdir … || exit 0») forever.
+  const d = looped();
+  const { spawn } = await import('node:child_process');
+  const child = spawn('node', [path.join(SCRIPTS, 'loop.mjs'), '--agent', 'sleep 10; echo done',
+    '--max', '6', '--sleep', '0', '--thrash', '9'], { cwd: d, stdio: 'ignore' });
+  await new Promise((r) => setTimeout(r, 1500));
+  child.kill('SIGTERM');
+  const code = await new Promise((r) => {
+    child.on('close', (c) => r(c));
+    setTimeout(() => { child.kill('SIGKILL'); r('SURVIVED'); }, 4000);
+  });
+  assert.notEqual(code, 'SURVIVED', 'the loop ignored SIGTERM');
+  assert.equal(fs.existsSync(path.join(d, '.autopilot.lock')), false, 'the lock was left behind');
+  const rows = fs.readFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.filter((r) => r.exit !== null).length, 1, 'it started another iteration after the signal');
+});
+
+test('the lock is taken at the PROJECT, not at cwd', () => {
+  // The lock was `process.cwd()` while the ledger came from a walk UP, so two
+  // loops started from different directories of one project each took their own
+  // lock and drove the same goal.md concurrently.
+  const d = looped();
+  const deep = path.join(d, 'src', 'deep');
+  fs.mkdirSync(deep, { recursive: true });
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  fs.writeFileSync(path.join(d, '.autopilot.lock', 'pid'), String(process.pid));
+  const out = (() => { try { return loop(deep, ['--agent', 'echo x', '--sleep', '0']); } catch (err) { return err.stderr; } })();
+  assert.match(out, /another iteration is running/);
+});
+
+test('a lock whose holder is gone is reclaimed, not a permanent wedge', () => {
+  const d = looped();
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  fs.writeFileSync(path.join(d, '.autopilot.lock', 'pid'), '999999'); // no such process
+  assert.equal(loopStatus(d, ['--agent', 'date >> docs/goal.md', '--sleep', '0', '--max', '1']), 0);
+});
+
+test('touching the ledger is not progress — content, not mtime', () => {
+  // `touch docs/goal.md` bought twenty-five paid iterations, and the doctrine
+  // tells the agent to write the ledger every iteration, so «the file was
+  // touched» cannot mean «work happened».
+  const d = looped();
+  assert.equal(loopStatus(d, ['--agent', 'touch docs/goal.md; echo burned', '--max', '8', '--sleep', '0']), 3);
+});
+
+test('a failing agent is diagnosed as the COMMAND failing, not as thrash', () => {
+  // A broken agent changes nothing either, so both counters crossed in the same
+  // iteration and thrash always won — an unauthenticated CLI, a typo and a rate
+  // limit were all reported as «a wrong premise, not persistence».
+  const d = looped();
+  assert.equal(loopStatus(d, ['--agent', 'echo boom >&2; exit 1', '--max', '5', '--sleep', '0']), 4);
+  const log = fs.readFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), 'utf8');
+  assert.match(log, /"stopped":"agent failing"/);
+});
+
+test('an agent that returns instantly is stopped — a backgrounded command is not work', () => {
+  const d = looped();
+  assert.equal(loopStatus(d, ['--agent', '( sleep 5 ) & echo launched; date >> docs/goal.md', '--max', '20', '--sleep', '0']), 5);
+});
+
+test('one unreadable line does not erase the whole log', () => {
+  // A truncated row — what a kill mid-append leaves — made --status report «no
+  // iterations recorded yet» for thirty iterations and five hours of agent time.
+  const d = looped();
+  loopStatus(d, ['--agent', 'date >> docs/goal.md', '--max', '2', '--sleep', '0']);
+  fs.appendFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), '{"started":"2026-08-02T00:00:00Z","seconds":6');
+  const out = loop(d, ['--status']);
+  assert.match(out, /iterations ·/);
+  assert.match(out, /unreadable line/);
+});
+
+test('a broken symlink in the ledger does not lose a paid iteration', () => {
+  const d = looped();
+  fs.symlinkSync('/nope/gone', path.join(d, 'docs', 'notes.md'));
+  loopStatus(d, ['--agent', 'echo PAID-WORK', '--max', '1', '--sleep', '0']);
+  const rows = fs.readFileSync(path.join(d, 'agent-logs', 'loop.jsonl'), 'utf8').trim().split('\n');
+  assert.ok(rows.length >= 1, 'the iteration was paid for and left no row');
+});
+
+test('--thrash 0 is refused', () => {
+  const out = (() => { try { return loop(tmp(), ['--agent', 'x', '--thrash', '0']); } catch (err) { return err.stderr; } })();
+  assert.match(out, /at least 1/);
+});
+
 test('two loops cannot share one ledger', () => {
   const d = looped();
   fs.mkdirSync(path.join(d, '.autopilot.lock'));
@@ -1145,10 +1234,24 @@ test('a run that overlaps the previous one does nothing — two loops share one 
   run('bootstrap.mjs', d);
   const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
   // ONE lock name for every shape of iteration: a scheduled carrier firing
-  // while a human drives loop.mjs is two agents on one ledger.
+  // while a human drives loop.mjs is two agents on one ledger. A real holder
+  // writes its PID — a lock with nobody behind it is now RECLAIMED, because the
+  // only way to stop the old synchronous loop was SIGKILL, and a lock left that
+  // way disabled the carrier forever.
   fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  fs.writeFileSync(path.join(d, '.autopilot.lock', 'pid'), String(process.pid));
   execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
   assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'a second agent started on the same ledger');
+});
+
+test('the carrier reclaims a lock whose holder is gone', () => {
+  const d = tmp();
+  run('bootstrap.mjs', d);
+  fs.mkdirSync(path.join(d, '.autopilot.lock'));
+  fs.writeFileSync(path.join(d, '.autopilot.lock', 'pid'), '999999');
+  const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.ok(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), 'a dead lock still disables the carrier');
 });
 
 test('the cron form is ONE command line — a crontab entry cannot wrap', () => {

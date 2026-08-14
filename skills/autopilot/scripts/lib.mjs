@@ -207,3 +207,48 @@ export function serverMapProblem(map) {
   return null;
 }
 
+/**
+ * The ledger home AND the project directory it was found in — from ONE walk.
+ *
+ * They were derived separately: `loop.mjs` locked in `process.cwd()` while the
+ * ledger came from a walk UP, so two loops started from different directories
+ * of one project each took their own lock and drove the same `goal.md`
+ * concurrently. Whatever keys the lock must be the same thing that keys the
+ * ledger, so they are returned together.
+ */
+export function findLedger(start) {
+  for (const dir of projectDirs(start)) {
+    const hits = LEDGER_HOMES.map((r) => path.join(dir, r)).filter((d) => hasExactly(d, 'goal.md'));
+    if (hits.length) return { homes: hits, root: dir };
+  }
+  return { homes: [], root: realPath(start) };
+}
+
+/**
+ * Take `dir` as a lock, reclaiming it from a holder that is gone.
+ *
+ * Without the PID check, one SIGKILL — the only signal that could stop the
+ * synchronous loop — left the lock forever, and the carrier's wrapper is
+ * `mkdir … || exit 0`: a daemon that reports success every interval and never
+ * invokes the agent, which is the exact failure its own comment warns about.
+ */
+export function takeLock(dir) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(dir, 'pid'), String(process.pid));
+      return true;
+    } catch {
+      const pid = Number((() => { try { return fs.readFileSync(path.join(dir, 'pid'), 'utf8'); } catch { return ''; } })().trim());
+      if (!pid) return false;
+      try {
+        process.kill(pid, 0);      // still alive — a real holder
+        return false;
+      } catch {
+        // Gone. Reclaim once, then try again; if someone beat us to it, they hold it.
+        try { fs.rmSync(dir, { recursive: true }); } catch { return false; }
+      }
+    }
+  }
+  return false;
+}

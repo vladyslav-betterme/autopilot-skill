@@ -98,3 +98,7 @@ fatal or major finding in the same area two rounds running.
 - **prove** `npm run verify` → 0 — R4 new-mcp: lock first, top-level shape · 2026-08-14T08:54:56Z
 - **prove** `npm run verify` → 1 — R4 carrier: github STOP, cron divisors, %, YAML · 2026-08-14T08:56:51Z
 - **prove** `npm run verify` → 0, 0 (2 runs) — R4 carrier pinned · 2026-08-14T08:57:54Z
+- **prove** `npm run verify` → 0 — R4 loop: signals, lock, content, failure-first · 2026-08-14T09:04:36Z
+- **prove** `npm run verify` → 1, 1 (2 runs) — R4 loop+carrier lock reclaim · 2026-08-14T09:05:42Z
+- **prove** `npm run verify` → 0 — R4 loop+carrier complete · 2026-08-14T09:06:50Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — the differential oracle · 2026-08-14T09:10:17Z

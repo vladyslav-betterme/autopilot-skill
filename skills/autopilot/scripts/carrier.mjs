@@ -138,8 +138,8 @@ const cronExpr = kind === 'cron' || kind === 'linux' || kind === 'github' ? cron
 const wrapper = [
   `cd ${JSON.stringify(root)} || exit 1`,
   `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do [ -e "$s" ] && exit 0; done`,
-  `mkdir ${LOCK_DIR} 2>/dev/null || exit 0`,
-  `trap 'rmdir ${LOCK_DIR}' EXIT`,
+  `mkdir ${LOCK_DIR} 2>/dev/null || { kill -0 "$(cat ${LOCK_DIR}/pid 2>/dev/null)" 2>/dev/null && exit 0; rm -rf ${LOCK_DIR}; mkdir ${LOCK_DIR} || exit 0; }`,
+  `echo $$ > ${LOCK_DIR}/pid; trap 'rm -rf ${LOCK_DIR}' EXIT`,
   `mkdir -p ${logDir}`,
   agent,
   // `;`, never `&&`. Joined with `&&` this reads fine and is silently inert:
