@@ -318,6 +318,28 @@ must FAIL against two historic versions.** It does. That test is the answer to
 «how do you know a check is load-bearing», and it is the one thing from this
 campaign most worth stealing.
 
+## Round 6 (08-14) — three lenses this campaign had not used
+
+Two fatals, seven majors, sixteen doc claims — and **one new cause**, which is
+the number the stopping rule counts.
+
+| # | Lens | What | Reproduce it | Fixed by |
+|---|---|---|---|---|
+| R6-F1 | money | The carrier took its overlap lock in the directory it was EMITTED from while the loop locks the project the ledger belongs to. Emitted from `packages/api`, both paid agents ran concurrently, every interval, under a banner promising a lock. The log dir went to the same wrong place | emit from a subdirectory, run the wrapper, start the loop from the root | one derived project root for the `cd`, the lock and the log |
+| R6-F2 | money | SIGHUP had no handler, so a closing terminal killed the supervisor while the agent — detached into its own group — survived. The lock carries the SUPERVISOR's pid, so the next carrier tick reclaimed it and paid for a second agent beside the orphan, with nothing watching STOP | `kill -HUP` the loop, then run the carrier's wrapper | SIGHUP joins SIGINT/SIGTERM |
+| R6-M1 | money | The thrash stop was inert for the workflow SKILL.md recommends: `prove --record` appends a timestamped line every iteration, so the content hash moved every time — eight of eight iterations «moved» with nothing done | a loop whose agent is only `prove --record -- true` | the hash excludes the tool's own receipt |
+| R6-M2 | money | Two projects named `api` produced one launchd label and one install path in `~/Library/LaunchAgents`: arming the second overwrote the first's plist, and the job that kept firing was the FIRST project's | emit from two same-named checkouts | the label carries a hash of the project path |
+| R6-M3…M9 | first run | **The tool prints an instruction that does not work** — seven of them: a usage line offering `--kind cron` deleted two rounds earlier, `<skill>` in a terminal, an `install:` hint that fails from the project root the skill says to stand in, `read /goal.md`, a `python -m pytest` fallback on a machine with only `python3`, a justfile project reporting «no check» while `just check` sat in the repo | follow the README as a stranger and run every line | fixed individually, and covered by a seventh oracle that runs every script and checks what it printed |
+| R6-D1…D16 | honesty | Sixteen claims false or exaggerated, **no new cause**: «four stopping conditions» when there are six, «six harnesses» when seven, a «five-lens council» that was three, «32 bodies» when the corpus is 37 under a ground truth that changed — and the row that exists BECAUSE the count kept rotting, rotted a third time | `npm test`; `grep -c "stopped:" loop.mjs`; count the corpus | the numbers that rot now carry the command instead |
+
+**The new cause:** «the tool's own printed instruction does not work». It is not
+a bug in what anything DOES — and for an unattended loop the next actor is a
+model reading that line, so it is the same thing. `test/printed-instructions-oracle.test.mjs`
+is the guard: sixteen invocations, no placeholder outside a usage line, every
+offered flag accepted by its own parser, every path present.
+
+New causes per round so far: **6 → 1 → 0 → 2 → 5 → 1.**
+
 ## The install path, run end to end — a check nobody had done
 
 Everything above tests the scripts where they are developed. The thing people

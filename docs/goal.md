@@ -78,7 +78,8 @@ guard is a new row.
 | 2 | re-review of the fixes · cold-start drill 2 — same-model, read-only | 4 | 6 | 2 | every fatal was in round 1's own repairs; all fixed and pinned (78 tests) |
 | 3 | one reviewer per owed area — `prove`, `ledger`, `new-mcp` | 5 | 6 | 3 | two were earlier fatals alive under their own fixes; all fixed and pinned (98 tests) |
 | 4 | prove · ledger+carrier · new-mcp · `loop.mjs` (first outside look) · convergence analyst | 9 | 8 | — | every fatal but `loop`'s was inside a previous round's fix; cron was CUT and §7 was replaced as a result |
-| 5 | the three scripts nobody has ever reviewed (`discover`, `skills`, `new-skill`) · a re-review of round 4's fixes · cold-start drill 3 | in flight | | | scoped by «the yield comes from whatever subsurface nobody looked at yet» |
+| 5 | the three scripts nobody had ever reviewed · a re-review of round 4's fixes · cold-start drill 3 | 14 | 8 | — | eight in unreviewed scripts, six in round 4's own fixes; **the oracle itself was found decorative** and rebuilt |
+| 6 | money & irreversibility · a stranger's first run · honesty audit | 2 | 7 (+16 doc claims) | — | **one new cause** — «the tool's own printed instruction does not work» — now covered by a seventh oracle |
 
 ## Iteration log
 
