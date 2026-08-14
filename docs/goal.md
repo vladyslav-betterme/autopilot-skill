@@ -10,7 +10,7 @@ here without re-deriving the plan.
 |---|---|
 | check command | `npm run verify` — better, `node skills/autopilot/scripts/prove.mjs --record -- npm run verify`, which appends the true status to the iteration log below |
 | baseline | 2026-08-13, before iteration one: exit 0, `# tests 43 / # pass 43 / # fail 0`. Nothing red predates this campaign. |
-| where it stands NOW | **Do not read a number here — produce one:** `npm test`, then `git log --oneline -1`. Last updated at `0cdb95b` (2026-08-14). **If that is not `git rev-parse --short HEAD`, the count below is unknown.** This row has been stale three times, twice under a sentence explaining why it must not be; carrying the command is the only version that cannot rot. |
+| where it stands NOW | **Do not read a number here — produce one:** `npm test`, then `git log --oneline -1`. Last updated at `331b8ab` (2026-08-14). **If that is not `git rev-parse --short HEAD`, the count below is unknown.** This row has been stale three times, twice under a sentence explaining why it must not be; carrying the command is the only version that cannot rot. |
 | reading the check | it prints ~40 `#`-prefixed lines that look like errors (`refusing to run a shell-shaped check`, `FLAKY`, `STOPPED by STOP`, `RECORD FAILED`). Those are captured output from tests that assert on failure paths. **The exit code is the verdict**, nothing else. |
 | points at production? | No. No `.env*`, no deploy target, no database. The only outward act is `git push`. |
 | push policy | after the check is green, at the end of an iteration — not at campaign end. Standing authorisation, `github.com/vladyslav-betterme/autopilot-skill`. |
