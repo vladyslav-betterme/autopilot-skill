@@ -40,15 +40,30 @@ import { spawnSync } from 'node:child_process';
 const SCRIPTS = path.resolve(import.meta.dirname, '..', 'skills', 'autopilot', 'scripts');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'oracle-'));
 
-/** What the body's status IS, when a pipe cannot hide a failure. */
+/**
+ * Ground truth: **did any command in this body fail?**
+ *
+ * It was `bash -o pipefail` alone, and a reviewer showed that answers a
+ * different question — «what did the LAST command return». For
+ * `echo "don't panic" ; false ; echo "we're green"` pipefail says 0, so the
+ * property could not fire on it, and **22 of the 32 corpus rows had truth 0,
+ * including ten of the thirteen labelled as round 1–4 fatal reproductions.**
+ * The oracle passed against a `prove.mjs` containing two known fatals. It was
+ * decorative, and it was the mechanism a stopping rule had been written around.
+ *
+ * `-e` is what makes it ask the human's question. The divergence `-e -o
+ * pipefail` introduces is SIGPIPE (`cat big | head -1` exits 141 while being
+ * perfectly honest); rows like that are marked `divergent` and excluded from
+ * the property rather than quietly deleted.
+ */
 const truth = (body, cwd) =>
-  spawnSync('bash', ['-o', 'pipefail', '-c', body], { cwd, stdio: 'ignore' }).status;
+  spawnSync('bash', ['-e', '-o', 'pipefail', '-c', body], { cwd, stdio: 'ignore' }).status;
 
 /** What prove REPORTS for the same body, run the way the skill recommends. */
-function verdict(body) {
+function verdict(body, also = {}, scriptsDir = SCRIPTS) {
   const d = tmp();
-  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'o', scripts: { verify: body } }));
-  const res = spawnSync('node', [path.join(SCRIPTS, 'prove.mjs'), '--', 'npm', 'run', 'verify'],
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'o', scripts: { verify: body, ...also } }));
+  const res = spawnSync('node', [path.join(scriptsDir, 'prove.mjs'), '--', 'npm', 'run', 'verify'],
     { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   const refused = res.status === 2 && /compound|piped|cannot identify/.test(res.stderr);
   return { refused, status: res.status, cwd: d };
@@ -97,21 +112,71 @@ const CORPUS = [
   { body: `${OK} && ${FAIL} | cat` },
   { body: `for i in 1 2; do ${FAIL}; done; echo looped` },
   { body: `${FAIL} | ${FAIL} | ${OK}` },
+  // — round 5: the layers nest, and each guard saw only its own —
+  { body: `cat <(${FAIL})`, from: 'R5' },
+  { body: `sh -c "${FAIL.replaceAll('"', "'")} | tail -1"`, from: 'R5' },
+  { body: `${FAIL} || exit 0`, from: 'R5' },
+  { body: 'npm run --silent inner', from: 'R5', also: { inner: `${FAIL} | cat` } },
+  // — honest, and known to diverge from the oracle's own ground truth —
+  { body: 'seq 1 100000 | head -1 > /dev/null', divergent: 'SIGPIPE: head closes the pipe and seq takes it' },
 ];
 
-test('prove never reports success for a check that pipefail says failed', () => {
+/** Runs the whole corpus against a given scripts directory. Returns the rows
+ *  where prove reported success for a body that truly failed. */
+function disagreements(scriptsDir = SCRIPTS) {
   const wrong = [];
   for (const row of CORPUS) {
-    const v = verdict(row.body);
+    if (row.divergent) continue;
+    const v = verdict(row.body, row.also, scriptsDir);
     const t = truth(row.body, v.cwd);
     // The property, stated once: a body whose honest status is failure must not
     // come back as success. Refusing it (exit 2) is a legitimate answer.
     const reportedSuccess = !v.refused && v.status === 0;
     if (t !== 0 && reportedSuccess) wrong.push({ ...row, truth: t, got: v.status });
   }
+  return wrong;
+}
+
+test('prove never reports success for a check in which something failed', () => {
+  const wrong = disagreements();
   assert.deepEqual(wrong, [], `prove reported success for ${wrong.length} failing check(s):\n` +
-    wrong.map((w) => `  ${w.from ?? 'composed'}: ${JSON.stringify(w.body)} — pipefail says ${w.truth}`).join('\n'));
+    wrong.map((w) => `  ${w.from ?? 'composed'}: ${JSON.stringify(w.body)} — truth ${w.truth}`).join('\n'));
 });
+
+/**
+ * The oracle's own regression test, and the reason this file was rewritten: the
+ * previous version PASSED against a `prove.mjs` that a reviewer then broke in
+ * two ways in ten minutes. An oracle that cannot fail against a binary with
+ * known fatals is decoration — so it is now pointed at those binaries.
+ */
+test('the oracle FAILS against versions with known fatals', { skip: !hasGit() }, () => {
+  const historic = [
+    ['bc7d974~1', 'before round 4 — the apostrophe forge and `bash -O extglob -c`'],
+    ['c90a036~1', 'before round 3 — the separator blacklist'],
+  ];
+  for (const [rev, why] of historic) {
+    const dir = checkoutScripts(rev);
+    if (!dir) continue;
+    const wrong = disagreements(dir);
+    assert.ok(wrong.length > 0, `the corpus found nothing wrong with ${rev} (${why}) — it cannot be load-bearing`);
+  }
+});
+
+function hasGit() {
+  return spawnSync('git', ['rev-parse', '--git-dir'], { cwd: path.resolve(SCRIPTS, '..', '..', '..'), stdio: 'ignore' }).status === 0;
+}
+
+/** The scripts as they were at `rev`, in a temp directory. */
+function checkoutScripts(rev) {
+  const repo = path.resolve(SCRIPTS, '..', '..', '..');
+  const dir = tmp();
+  for (const f of ['prove.mjs', 'lib.mjs']) {
+    const got = spawnSync('git', ['show', `${rev}:skills/autopilot/scripts/${f}`], { cwd: repo, encoding: 'utf8' });
+    if (got.status !== 0) return null;
+    fs.writeFileSync(path.join(dir, f), got.stdout);
+  }
+  return dir;
+}
 
 test('and it does not refuse everything to get there', () => {
   // A guard that refuses every input satisfies the property above and is

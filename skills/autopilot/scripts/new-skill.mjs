@@ -71,9 +71,16 @@ if (!process.stdin.isTTY) {
     body = '';
   }
 }
-// A harvested body often carries its own frontmatter; two blocks in one file
-// makes the loader read the SECOND name and the skill answers to nothing.
-body = body.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+/**
+ * A harvested body often carries its own frontmatter, and two blocks in one file
+ * makes the loader read the SECOND name — so the leading block goes. But a
+ * leading `---` is also a legal markdown THEMATIC BREAK: a body that opened
+ * with one lost its whole first section, silently, and the run reported
+ * success. So strip only what is actually frontmatter: a block whose first
+ * line is a `key: value`.
+ */
+body = body.replace(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/, (whole, inner) =>
+  (/^[A-Za-z][\w-]*\s*:/.test(inner.trimStart()) ? '' : whole)).trim();
 
 const TEMPLATE = `# ${name}
 
@@ -121,6 +128,7 @@ try {
  * `.claude/skills` AND `.codex/skills` got the skill in one harness and silence
  * in the other — while three docs claimed «every agent directory».
  */
+const link = (parent) => path.join(parent, name);
 const linked = [];
 for (const d of AGENT_DIRS) {
   if (path.join(root, d) === dirHome) continue; // it already lives there
@@ -128,11 +136,16 @@ for (const d of AGENT_DIRS) {
   // Only into agent directories this project already uses, plus Claude Code's,
   // which is created if its `.claude` root is there.
   if (!exists(d) && !(d === '.claude/skills' && exists('.claude'))) continue;
-  fs.mkdirSync(parent, { recursive: true });
-  const link = path.join(parent, name);
   if (exists(path.join(d, name))) continue;
+  // The mkdir sat OUTSIDE this try, so a `.claude/skills` that is a dangling
+  // symlink (what a cleaned `.agents` leaves) or a regular file threw an
+  // uncaught ENOENT/EEXIST *after* the skill had been written: no «created»
+  // line, no «use now» line, exit 1 — and the retry refused, because the skill
+  // now existed. The half-created state the conflict check was written to
+  // prevent, one phase later.
   try {
-    fs.symlinkSync(path.relative(parent, dir), link);
+    fs.mkdirSync(parent, { recursive: true });
+    fs.symlinkSync(path.relative(parent, dir), link(parent));
     linked.push(path.join(d, name));
   } catch (err) {
     console.error(`could not link into ${d}: ${err.code ?? err.message} — copy it by hand.`);

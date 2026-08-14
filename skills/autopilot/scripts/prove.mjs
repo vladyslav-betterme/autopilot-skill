@@ -150,11 +150,18 @@ function compoundProblem(script) {
     if (c === ';') return '«;»';
     if (c === '`') return 'a backtick';
     if (c === '$' && s[i + 1] === '(') return '«$(…)»';
+    // `cat <(tsc --noEmit)` hides a status exactly like a pipe does, and the
+    // scanner had never heard of it.
+    if ((c === '<' || c === '>') && s[i + 1] === '(') return `«${c}(…)» process substitution`;
     if (c === '|') {
       if (s[i + 1] === '|') {
         // `|| exit …` is the honest guard idiom; `|| true` is the commonest way
         // there is to swallow a failure.
-        if (/^\s*exit\b/.test(s.slice(i + 2))) { i++; continue; }
+        // `|| exit` is the honest guard idiom — but `|| exit 0` swallows the
+        // failure exactly like `|| true`, one token longer, and the guard
+        // admitted it BY NAME while its own message said it could not hide one.
+        const tail = s.slice(i + 2);
+        if (/^\s*exit\b/.test(tail) && !/^\s*exit\s+0*\s*($|[;&|])/.test(tail)) { i++; continue; }
         return '«||» followed by something that can succeed';
       }
       return '«|»';
@@ -174,7 +181,11 @@ const shellAt = cmd.findIndex((a) => SHELLS.has(path.basename(a)));
 // The argument after `-c` SPECIFICALLY, not «the first thing without a dash».
 // Bash options take values: `bash -O extglob -c '… | …'` handed the guard the
 // string «extglob» and ran the pipe. `-lc` and friends are the same flag.
-const dashC = shellAt === -1 ? -1 : cmd.findIndex((a, i) => i > shellAt && /^-[a-zA-Z]*c$/.test(a));
+// `c` need not be LAST: `bash -cx '… | tail'` combines short options, and the
+// previous pattern required the cluster to END in c, so the guard was never
+// called at all. That is the same hole the round-4 fix closed for options that
+// take VALUES, moved one inch.
+const dashC = shellAt === -1 ? -1 : cmd.findIndex((a, i) => i > shellAt && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a));
 const shellScript = dashC === -1 ? null : cmd[dashC + 1];
 const shellProblem = shellScript ? compoundProblem(shellScript) : null;
 if (shellProblem) {
@@ -197,12 +208,44 @@ if (shellProblem) {
  * binary the check invokes — say so rather than implying coverage.
  */
 const RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+
+/**
+ * The layers NEST, and each guard used to see only its own layer.
+ *
+ *   `sh -c 'npm run verify'`   — the scanner cleared it (no separator) and the
+ *                                script guard never ran, because argv[0] was sh
+ *   `"verify": "sh -c '… | tail'"` — the script guard scanned the body, treated
+ *                                the quoted text as data, and that data was a
+ *                                shell script whose pipe decided the status
+ *
+ * So both directions recurse, with a depth bound: a shell script that invokes a
+ * runner is handed to the script guard, and a script body that invokes a shell
+ * has its quoted script scanned.
+ */
+function shellScriptIn(tokens) {
+  const at = tokens.findIndex((a) => SHELLS.has(path.basename(a)));
+  if (at === -1) return null;
+  const ci = tokens.findIndex((a, i) => i > at && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a));
+  return ci === -1 ? null : tokens[ci + 1] ?? null;
+}
+/** Split on whitespace, honouring quotes — enough to see «npm run x» inside a
+ *  shell script, which is all this needs to decide whether to recurse. */
+function words(text) {
+  return String(text).match(/(?:[^\s'"]+|'[^']*'|"[^"]*")+/g)?.map((w) => w.replace(/^['"]|['"]$/g, '')) ?? [];
+}
 /** A workspace flag means npm will read a package.json this cannot identify —
  *  `npm run verify -w packages/api` resolved the ROOT script and cleared a file
  *  npm never reads. Refusing beats clearing the wrong one. */
 const WORKSPACE_FLAGS = /^(-w|--workspace|--workspaces|-F|--filter|--prefix|-C|--dir)($|=)/;
-function hiddenPipe() {
-  if (!RUNNERS.has(path.basename(cmd[0] ?? ''))) return null;
+function hiddenPipe(tokens, depth) {
+  if (depth > 3) return null;
+  // A shell in front of the runner is not a hiding place: scan what it runs.
+  if (SHELLS.has(path.basename(tokens[0] ?? ''))) {
+    const inner = shellScriptIn(tokens);
+    return inner ? hiddenPipe(words(inner), depth + 1) : null;
+  }
+  if (!RUNNERS.has(path.basename(tokens[0] ?? ''))) return null;
+  const cmd = tokens; // the rest of this function reads `cmd`
   const ws = cmd.slice(1).find((a) => WORKSPACE_FLAGS.test(a));
   if (ws) {
     die(`«${ws}» points the check at a package this runner cannot identify, so it cannot read that\n` +
@@ -233,12 +276,23 @@ function hiddenPipe() {
       if (typeof body !== 'string') continue;
       const problem = compoundProblem(body);
       if (problem) return { script: key, body, problem };
-      for (const m of body.matchAll(/\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+|run-script\s+)?([\w:.-]+)/g)) queue.push(m[1]);
+      // A body that hands a script to a shell: scan THAT, or the pipe inside a
+      // quoted `sh -c "…"` is «data» to the scanner and decides the status.
+      const nested = shellScriptIn(words(body));
+      if (nested) {
+        const inner = compoundProblem(nested);
+        if (inner) return { script: key, body, problem: `${inner}, inside a nested shell` };
+        const deeper = hiddenPipe(words(nested), depth + 1);
+        if (deeper) return deeper;
+      }
+      // Flags are not script names: `npm run --silent inner` captured «--silent»
+      // and the real script was never queued.
+      for (const m of body.matchAll(/\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+|run-script\s+)?((?:--?[\w-]+(?:=\S+)?\s+)*)([\w:.@-]+)/g)) queue.push(m[2]);
     }
   }
   return null;
 }
-const piped = hiddenPipe();
+const piped = hiddenPipe(cmd, 0);
 if (piped) {
   die(`the check itself is compound — ${piped.problem} decides its status, not the command it names.\n` +
     `  "${piped.script}": ${JSON.stringify(piped.body)}\n` +

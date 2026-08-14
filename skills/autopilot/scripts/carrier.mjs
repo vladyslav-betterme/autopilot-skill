@@ -27,8 +27,16 @@ const root = process.cwd();
 const argv = process.argv.slice(2);
 const flag = (name, fallback = null) => {
   const i = argv.indexOf(name);
-  const v = i === -1 ? null : argv[i + 1];
-  return v && !v.startsWith('--') ? v : fallback;
+  if (i === -1) return fallback;
+  const v = argv[i + 1];
+  // `--every --kind github` silently scheduled every 30 minutes: the value was
+  // missing, the fallback applied, and nobody was told. A money knob may not
+  // ignore a malformed value in a file that refuses them everywhere else.
+  if (v === undefined || v.startsWith('--')) {
+    console.error(`${name} needs a value.`);
+    process.exit(2);
+  }
+  return v;
 };
 const die = (msg) => { console.error(msg); process.exit(2); };
 
@@ -147,7 +155,7 @@ const cronExpr = kind === 'github' ? cronFor(minutes) : '';
  */
 const wrapper = [
   `cd ${JSON.stringify(root)} || exit 1`,
-  `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do [ -e "$s" ] && exit 0; done`,
+  `for s in ${stopPaths.map((p) => JSON.stringify(p)).join(' ')}; do { [ -e "$s" ] || [ -L "$s" ]; } && exit 0; done`,
   `mkdir ${LOCK_DIR} 2>/dev/null || { kill -0 "$(cat ${LOCK_DIR}/pid 2>/dev/null)" 2>/dev/null && exit 0; rm -rf ${LOCK_DIR}; mkdir ${LOCK_DIR} || exit 0; }`,
   `echo $$ > ${LOCK_DIR}/pid; trap 'rm -rf ${LOCK_DIR}' EXIT`,
   `mkdir -p ${logDir}`,
@@ -206,7 +214,7 @@ jobs:
         run: |
           halted=false
           for s in ${LEDGER_HOMES.map((h) => JSON.stringify(path.join(h, STOP_FILE))).join(' ')}; do
-            [ -e "$s" ] && halted=true
+            { [ -e "$s" ] || [ -L "$s" ]; } && halted=true
           done
           echo "halted=$halted" >> "$GITHUB_OUTPUT"
       - name: one iteration
@@ -257,9 +265,15 @@ console.error(`\n# ── not installed ─────────────�
 # To arm it:
 ${install}
 #
-# It halts on ANY of: ${stopPaths.join(' ')}
-# — the same set prove.mjs honours, so stopping the loop cannot leave a daemon
-# iterating without it. (${stopPath} is the one this project's ledger implies.)
+${kind === 'github'
+  ? `# It halts on any of these paths INSIDE THE CHECKOUT: ${LEDGER_HOMES.map((h) => path.join(h, STOP_FILE)).join(' ')}\n` +
+    `# — which means a STOP that stops your local loop does NOT stop this one until\n` +
+    `# it is committed and pushed. That is the price of a carrier that runs on\n` +
+    `# somebody else's machine, and it is the difference between this and launchd.`
+  : `# It halts on ANY of: ${stopPaths.join(' ')}\n` +
+    `# — the same set prove.mjs honours, so stopping the loop cannot leave a daemon\n` +
+    `# iterating without it. (${stopPath} is the one this project's ledger implies.)`}
+${kind === 'github' ? '# (the lock and the log below are launchd-only — Actions gives you its own run log)' : ''}
 # If a run crashes, ${LOCK_DIR} is left behind and every later run exits 0
 # doing nothing: delete the directory to resume.
 # Logs: ${path.join(logDir, 'carrier.log')} — read it after the first fire, or you have

@@ -429,14 +429,16 @@ an existing CI cron. Only when there is none:
 node <skill>/scripts/carrier.mjs --agent "claude -p 'continue the loop; read docs/goal.md first'" --every 30m
 ```
 
-It prints a launchd job, a crontab line or a GitHub Actions workflow — and
-**installs nothing**. Arming a job that runs an agent unattended spends money on
+It prints a launchd job or a GitHub Actions workflow — and **installs
+nothing**. (`--kind cron` was removed: four findings in three rounds, all in a
+grammar nothing in the check could execute.) Arming a job that runs an agent unattended spends money on
 a schedule, which is §6's to approve, so the install command is printed for a
-human to run. Every unit it emits `cd`s to the project first (cron and launchd
-start in `/`), holds an overlap lock (two loops sharing one `goal.md` is how a
-criterion gets marked met twice and landed once), and **halts on the same `STOP`
-file** — otherwise stopping the conversation leaves a daemon iterating without
-it. Read the log after the first fire, or you have armed something you have
+human to run. Every unit it emits `cd`s to the project first (a scheduler starts in `/`),
+holds an overlap lock whose holder's PID is written into it, and halts on the
+STOP paths **the same walk finds**. One exception, printed on the unit itself:
+a GitHub workflow runs on somebody else's machine, so it can only see a STOP
+that has been **committed and pushed**. That is the difference between it and
+launchd, and it is the reason launchd is the verified path. Read the log after the first fire, or you have armed something you have
 never watched run.
 
 **Draw the next item from the ledger, not from memory.** If the only thing that

@@ -182,6 +182,17 @@ const selected = LIBRARY
 main();
 function main() {
 if (has('--json')) {
+  // …but NOT together with --install. This branch used to run first, so
+  // `--install nosuchtag --json` printed `[]` and exited 0 where the same
+  // command without --json refuses with exit 2 — and `--install any --json`
+  // installed nothing, silently, successfully. Every guarantee in the install
+  // block below was skipped by the flag an agent driving this would reach for.
+  if (has('--install')) {
+    console.error('--json and --install do not combine: --json prints the catalogue and installs nothing.\n' +
+      'Run --install on its own, or use --install … --dry-run to see the exact commands.');
+    process.exitCode = 2;
+    return;
+  }
   console.log(JSON.stringify(selected, null, 2));
   process.exitCode = 0;
   return;

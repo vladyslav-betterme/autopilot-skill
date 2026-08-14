@@ -142,3 +142,8 @@ guard is a new row.
 - **prove** `npm run verify` → 0, 0 (2 runs) — one function for the ledger question · 2026-08-14T09:31:25Z
 - **prove** `npm run verify` → 0 — I13 ledger debt from drill 3 · 2026-08-14T09:33:25Z
 - **prove** `npm run verify` → 0 — I13 ledger debt · 2026-08-14T09:35:11Z
+- **prove** `npm run verify` → 1 — R5 discover: no invented checks · 2026-08-14T09:40:54Z
+- **prove** `npm run verify` → 0 — R5 discover fixes · 2026-08-14T09:42:00Z
+- **prove** `npm run verify` → 0 — R5 fixes pinned · 2026-08-14T09:43:44Z
+- **prove** `npm run verify` → 0 — R5: nested layers, signals, symlink STOP · 2026-08-14T09:48:03Z
+- **prove** `npm run verify` → 0, 0 (2 runs) — R5 loop+carrier pinned · 2026-08-14T09:49:28Z

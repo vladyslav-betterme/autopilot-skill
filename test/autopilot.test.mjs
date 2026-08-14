@@ -10,6 +10,12 @@ const run = (script, cwd, args = [], input = '') =>
   execFileSync('node', [path.join(SCRIPTS, script), ...args], { cwd, encoding: 'utf8', input });
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'autopilot-'));
+/** Discovery now ASKS the tool instead of regexing its file, so a recipe check
+ *  is only claimed where the tool exists — the honest answer, and one that
+ *  makes these two tests machine-dependent. */
+const hasBin = (bin) => {
+  try { execFileSync('command', ['-v', bin], { shell: '/bin/sh', stdio: 'ignore' }); return true; } catch { return false; }
+};
 
 /**
  * The bootstrap's ONE job is not creating files — it is not creating a SECOND
@@ -83,14 +89,57 @@ test('running twice creates nothing the second time', () => {
  * silently reporting none is how a loop ends up stopping at the model's
  * satisfaction.
  */
-test('discover finds the aggregate check and prefers it over the parts', () => {
+test('an aggregate is preferred only over what it VISIBLY invokes', () => {
+  // This test used to assert that any aggregate deletes the individual checks
+  // from the definition of done. Round 5 showed what that costs: SvelteKit's
+  // own manifest has `"check": "tsc && cd ./test/types && tsc"` beside a real
+  // `test`, and the loop's definition of done became `tsc` while the tests
+  // never ran. The safe side is asymmetric — a needless extra run costs
+  // minutes, a dropped suite reports a red project green.
   const d = tmp();
-  fs.writeFileSync(
-    path.join(d, 'package.json'),
-    JSON.stringify({ scripts: { lint: 'x', test: 'y', build: 'z', verify: 'all' } }),
-  );
+  fs.writeFileSync(path.join(d, 'package.json'),
+    JSON.stringify({ scripts: { lint: 'x', test: 'y', verify: 'npm run lint && npm run test' } }));
+  assert.deepEqual(JSON.parse(run('discover.mjs', d)).project.checks, ['npm run verify'],
+    'an aggregate that runs them both should stand alone');
+
+  const e = tmp();
+  fs.writeFileSync(path.join(e, 'package.json'),
+    JSON.stringify({ scripts: { lint: 'x', test: 'y', check: 'tsc && cd ./test/types && tsc' } }));
+  const out = JSON.parse(run('discover.mjs', e));
+  assert.deepEqual(out.project.checks, ['npm run check', 'npm run lint', 'npm run test'],
+    'a type check that merely MENTIONS test in a path does not cover it');
+  assert.deepEqual(out.project.aggregateOmits, ['npm run lint', 'npm run test']);
+});
+
+test('a check is never invented from a file merely being present', () => {
+  // Round 5, four fatals in one script. The worst was a Gemfile with neither
+  // spec/ nor a Rakefile: the emitted check globbed `test/**/*_test.rb`, found
+  // nothing, required nothing and exited 0 — a definition of done that could
+  // not fail, on every iteration, for every Jekyll site.
+  const cases = [
+    ['a Gemfile with no spec and no Rakefile', (d) => fs.writeFileSync(path.join(d, 'Gemfile'), 'source "x"\n')],
+    ['a unittest project that never declared pytest', (d) => {
+      fs.writeFileSync(path.join(d, 'requirements.txt'), 'requests==2.32.0\n');
+      fs.mkdirSync(path.join(d, 'tests')); fs.writeFileSync(path.join(d, 'tests', 'test_x.py'), '');
+    }],
+    ['a Makefile whose «check» is inside a define block', (d) =>
+      fs.writeFileSync(path.join(d, 'Makefile'), 'define HELPTEXT\ncheck: run the linter\nendef\n')],
+  ];
+  for (const [why, setup] of cases) {
+    const d = tmp();
+    setup(d);
+    const checks = JSON.parse(run('discover.mjs', d)).project.checks;
+    assert.deepEqual(checks, [], `${why} produced ${JSON.stringify(checks)}`);
+  }
+});
+
+test('a manifest that does not parse is reported, not silently no-project', () => {
+  // A package.json with a UTF-8 BOM — what PowerShell and Notepad write, and
+  // what npm reads fine — was «unknown project, no check, no scripts», silently.
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'package.json'), '\uFEFF{"scripts":{"test":"echo hi"}}');
   const out = JSON.parse(run('discover.mjs', d));
-  assert.deepEqual(out.project.checks, ['npm run verify'], 'an all-in-one check beats a list that can drift');
+  assert.deepEqual(out.project.checks, ['npm run test'], 'a BOM hid the whole project');
 });
 
 test('discover reports NO check rather than inventing one', () => {
@@ -230,7 +279,7 @@ test('each ecosystem states its own check, and none is invented', () => {
   }
 });
 
-test('a justfile is read with the same predicate as a Makefile', () => {
+test('a justfile is read with the same predicate as a Makefile', { skip: !hasBin('just') }, () => {
   // The second recipe format is where «two answers to one question» comes back:
   // one target-detecting function, or two that disagree about the same file.
   const d = tmp();
@@ -357,7 +406,7 @@ test('a make VARIABLE is not a target — the check it prints must run', () => {
   assert.ok(!out.project.checks.includes('make check'), JSON.stringify(out.project.checks));
 });
 
-test('deno without a lockfile still has a check', () => {
+test('deno without a lockfile still has a check', { skip: !hasBin('deno') }, () => {
   const d = tmp();
   fs.writeFileSync(path.join(d, 'deno.json'), JSON.stringify({ tasks: { start: 'deno run main.ts' } }));
   assert.deepEqual(JSON.parse(run('discover.mjs', d)).project.checks, ['deno test -A']);
@@ -983,6 +1032,74 @@ test('SIGTERM stops the loop instead of starting another paid agent', async () =
   assert.equal(rows.filter((r) => r.exit !== null).length, 1, 'it started another iteration after the signal');
 });
 
+test('a signal during the sleep gap does not buy another iteration', async () => {
+  // `stopping` was consulted only after the CHILD exited, so a Ctrl-C in the
+  // gap killed nothing and the loop started a fresh PAID agent — 15 seconds of
+  // every iteration by default. And the timer had to be CLEARED, not merely
+  // resolved past: a pending setTimeout kept the process alive for the rest of
+  // the gap, which reads exactly like «Ctrl-C did nothing».
+  const d = looped();
+  const { spawn } = await import('node:child_process');
+  const child = spawn('node', [path.join(SCRIPTS, 'loop.mjs'), '--agent', `echo ran >> ${JSON.stringify(path.join(d, 'ran.txt'))}`,
+    '--max', '6', '--sleep', '20', '--thrash', '9'], { cwd: d, stdio: 'ignore' });
+  await new Promise((r) => setTimeout(r, 1500));
+  child.kill('SIGINT');
+  const code = await new Promise((r) => {
+    child.on('close', (c) => r(c));
+    setTimeout(() => { child.kill('SIGKILL'); r('SURVIVED'); }, 6000);
+  });
+  assert.notEqual(code, 'SURVIVED', 'it sat out the whole sleep gap');
+  assert.equal(fs.readFileSync(path.join(d, 'ran.txt'), 'utf8').trim().split('\n').length, 1,
+    'a second agent was started after the signal');
+});
+
+test('a second signal kills an agent that ignores the first', async () => {
+  const d = looped();
+  const { spawn } = await import('node:child_process');
+  const child = spawn('node', [path.join(SCRIPTS, 'loop.mjs'), '--agent', 'trap "" TERM; sleep 30',
+    '--max', '3', '--sleep', '0', '--thrash', '9'], { cwd: d, stdio: 'ignore' });
+  await new Promise((r) => setTimeout(r, 1200));
+  child.kill('SIGINT');
+  await new Promise((r) => setTimeout(r, 600));
+  child.kill('SIGINT');
+  const code = await new Promise((r) => {
+    child.on('close', (c) => r(c));
+    setTimeout(() => { child.kill('SIGKILL'); r('SURVIVED'); }, 5000);
+  });
+  assert.notEqual(code, 'SURVIVED', 'only SIGKILL could stop it — which leaves the lock');
+  assert.equal(fs.existsSync(path.join(d, '.autopilot.lock')), false, 'the lock was left behind');
+});
+
+test('a STOP that is a broken symlink halts the carrier, not only the loop', () => {
+  // lib.mjs uses lstat ON PURPOSE — «a broken symlink named STOP is a stop file
+  // that existsSync calls absent». Both emitted carriers used `[ -e ]`, which
+  // is existsSync semantics: the switch stopped the conversation and left the
+  // daemon paying for an agent every interval.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, 'docs'));
+  run('bootstrap.mjs', d);
+  fs.symlinkSync('/definitely/not/here', path.join(d, 'docs', 'STOP'));
+  assert.equal(proveStatus(d, ['--', 'true']), 250);
+  const wrapper = carrierWrapper(d, ['--agent', 'echo ran >> agent-logs/proof.txt']);
+  execFileSync('/bin/sh', ['-c', wrapper], { cwd: d });
+  assert.equal(fs.existsSync(path.join(d, 'agent-logs', 'proof.txt')), false, 'the carrier ran on');
+});
+
+test('the GitHub banner describes the checkout, not the laptop', () => {
+  // It printed nine absolute paths from the author's machine and said «the same
+  // set prove.mjs honours», for a workflow that checks repo-relative paths
+  // inside actions/checkout. The only instruction the human got was wrong.
+  const d = tmp();
+  const res = execFileSync('node', [path.join(SCRIPTS, 'carrier.mjs'), '--agent', 'x', '--kind', 'github'],
+    { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.doesNotMatch(res, new RegExp(d), 'the banner named a path on this machine');
+});
+
+test('a money knob refuses a missing value', () => {
+  // `--every --kind github` silently scheduled every 30 minutes.
+  assert.throws(() => run('carrier.mjs', tmp(), ['--agent', 'x', '--every', '--kind', 'github']), /needs a value/);
+});
+
 test('the lock is taken at the PROJECT, not at cwd', () => {
   // The lock was `process.cwd()` while the ledger came from a walk UP, so two
   // loops started from different directories of one project each took their own
@@ -1375,6 +1492,41 @@ test('a TOML config is refused BEFORE it is overwritten with JSON', () => {
   assert.throws(() => run('new-mcp.mjs', d, ['x', '-d', 'anything long enough to pass the check', '--config', 'config.toml']), /must be a JSON config/);
   assert.match(fs.readFileSync(toml, 'utf8'), /mcp_servers\.theirs/, 'their TOML was rewritten');
   assert.equal(fs.existsSync(path.join(d, 'tools', 'x-mcp')), false, 'scaffolded anyway');
+});
+
+test('--json cannot bypass the install guarantees below it', () => {
+  // The --json branch ran first, so `--install nosuchtag --json` printed [] and
+  // exited 0 where the same command without --json refuses with exit 2 — and
+  // `--install any --json` installed nothing, silently, successfully.
+  const d = tmp();
+  assert.throws(() => run('skills.mjs', d, ['--install', 'nosuchtag', '--json']), /do not combine/);
+  assert.throws(() => run('skills.mjs', d, ['--install', 'any', '--json']), /do not combine/);
+  assert.doesNotThrow(() => run('skills.mjs', d, ['--json']));
+});
+
+test('a link that cannot be made does not abandon a half-created skill', () => {
+  // The mkdir sat outside the try, so a `.claude/skills` that is a dangling
+  // symlink threw uncaught AFTER the skill was written: no «created» line, no
+  // «use now» line, exit 1 — and the retry refused, because it now existed.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, '.claude'));
+  fs.mkdirSync(path.join(d, '.agents', 'skills'), { recursive: true });
+  fs.symlinkSync('../.agents/skills-gone', path.join(d, '.claude', 'skills'));
+  const out = run('new-skill.mjs', d, ['piped-check', '-d', DESC]);
+  assert.match(out, /created : \.agents\/skills\/piped-check\/SKILL\.md/);
+  assert.match(out, /use now/);
+});
+
+test('a body opening with a thematic break keeps its first section', () => {
+  // `---` at the top is legal markdown. Stripping it as frontmatter deleted the
+  // whole first section — the incident, which the template calls the section
+  // that matters — silently, with the run reporting success.
+  const d = tmp();
+  const body = '---\n\n# Incident\n\nSix deploys shipped red.\n\n---\n\n# What to do\n\nRead the exit code.\n';
+  newSkill(d, ['rulebody', '-d', DESC], body);
+  const written = fs.readFileSync(path.join(d, '.agents', 'skills', 'rulebody', 'SKILL.md'), 'utf8');
+  assert.match(written, /# Incident/, 'the first section was stripped as frontmatter');
+  assert.equal(written.match(/^---$/gm).length, 4, 'the real frontmatter is still exactly one pair');
 });
 
 test('the context-budget audit ships with the always-useful set', () => {

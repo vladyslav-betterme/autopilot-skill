@@ -38,14 +38,67 @@ const WANTED = CHECK_ORDER.filter((n) => !n.startsWith('type'));
 /** One task map (npm scripts, deno tasks, composer scripts) → one check list. */
 function fromTaskMap(tasks, prefix) {
   const aggregate = AGGREGATE.find((n) => tasks[n]);
+  const individual = INDIVIDUAL.filter((n) => tasks[n]);
+  if (!aggregate) {
+    return { aggregateCheck: null, checks: individual.map((n) => `${prefix} ${n}`), allScripts: Object.keys(tasks) };
+  }
+  /**
+   * An aggregate DELETED the test suite from the definition of done.
+   *
+   * In npm-land `check` very often means «type check»: SvelteKit's own
+   * published manifest has `"check": "tsc && cd ./test/types && tsc"` beside a
+   * real `test` script — and this returned `npm run check` alone, so every
+   * iteration's definition of done was `tsc` and the tests never ran.
+   *
+   * Whether it covers them is READABLE: look in its body for the other script
+   * names. What it does not mention, it does not run.
+   */
+  const body = String(tasks[aggregate] ?? '');
+  /**
+   * INVOKED, not merely mentioned. A word match called `test` covered by
+   * `"check": "tsc && cd ./test/types && tsc"` — the script name appears, in a
+   * PATH. The question is «does this run that script», so the pattern is a
+   * runner calling it: `npm run test`, `pnpm test`, `run-s lint test`.
+   */
+  const invokes = (n) => new RegExp(
+    `(?:npm|pnpm|yarn|bun)\\s+(?:run\\s+|run-script\\s+)?${n}\\b` +
+    `|(?:run-[sp]|npm-run-all)\\b[^&|;]*\\b${n}\\b`,
+  ).test(body);
+  const uncovered = individual.filter((n) => !invokes(n));
   return {
-    aggregateCheck: aggregate ? `${prefix} ${aggregate}` : null,
-    checks: aggregate ? [`${prefix} ${aggregate}`] : INDIVIDUAL.filter((n) => tasks[n]).map((n) => `${prefix} ${n}`),
+    aggregateCheck: `${prefix} ${aggregate}`,
+    checks: [`${prefix} ${aggregate}`, ...uncovered.map((n) => `${prefix} ${n}`)],
+    aggregateCovers: individual.filter((n) => !uncovered.includes(n)).map((n) => `${prefix} ${n}`),
+    aggregateOmits: uncovered.map((n) => `${prefix} ${n}`),
     allScripts: Object.keys(tasks),
   };
 }
 
-const parse = (p) => { const raw = read(p); if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
+/** Files this script could not read, and why. A bare `catch { return null }`
+ *  made «this manifest is broken» indistinguishable from «there is no manifest»:
+ *  a package.json with a UTF-8 BOM — what PowerShell and Notepad write, and what
+ *  npm itself handles fine — was reported as «unknown project, no check, no
+ *  scripts», with nothing said. */
+const unreadable = [];
+const parse = (p) => {
+  const raw = read(p);
+  if (raw === null) return null;
+  // A BOM is not a syntax error to npm, and `.jsonc` exists precisely to carry
+  // comments — this file already claimed to read deno.jsonc.
+  const cleaned = raw.replace(/^\uFEFF/, '').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  try { return JSON.parse(cleaned); } catch (err) {
+    unreadable.push({ file: p, why: err.message.split('\n')[0] });
+    return null;
+  }
+};
+
+/** Is this command actually runnable here? A check naming a tool nobody has
+ *  installed is red from iteration one for a reason that has nothing to do with
+ *  the work — and this script used to emit `pytest -q` because a `tests/`
+ *  directory existed, and `deno test -A` because a formatter config did. */
+const onPath = (bin) => {
+  try { execFileSync('command', ['-v', bin], { shell: '/bin/sh', stdio: 'ignore' }); return true; } catch { return false; }
+};
 
 function nodeProject() {
   const json = parse('package.json');
@@ -58,10 +111,13 @@ function denoProject() {
   const json = parse('deno.json') ?? parse('deno.jsonc');
   if (!json) return null;
   const fromTasks = fromTaskMap(json.tasks ?? {}, 'deno task');
-  // A project with no task named like a check still has `deno test`, which is
-  // real and runnable — unlike a made-up one. (It used to require deno.lock,
-  // which Deno does not, so a lockless project reported no check at all.)
-  if (!fromTasks.checks.length) fromTasks.checks.push('deno test -A');
+  // `deno test -A` is only real if deno is installed AND something looks like a
+  // Deno test. A `deno.json` holding nothing but a formatter width — or a
+  // Supabase edge-function config — used to be enough to put a command for an
+  // absent runtime into the definition of done.
+  if (!fromTasks.checks.length && onPath('deno') && glob(/_test\.(ts|js|tsx|jsx)$/)) {
+    fromTasks.checks.push('deno test -A');
+  }
   return { kind: 'deno', ...fromTasks };
 }
 
@@ -74,16 +130,20 @@ function denoProject() {
  * «a made-up check is worse than an honest none», which this skill's own test
  * says in as many words. The generic branch below did it correctly.
  */
-function recipeTarget(file, wanted) {
+function recipeTarget(file, wanted, runner) {
   if (!has(file)) return null;
-  const body = read(file) ?? '';
-  // `check:=1` is a VARIABLE, not a target — and `make check` on it exits 2.
-  // A made-up check is worse than an honest none, so the colon must not be
-  // part of an assignment (`:=`, `::=`, `:::=`).
-  return wanted.find((t) => new RegExp(`^${t}[ \\t]*:(?!:*=)`, 'm').test(body)) ?? null;
+  // ASK the tool. A regex over the text both invented and missed: it emitted
+  // `make check` for a target inside a `define` block and inside a false
+  // `ifeq`, where make exits 2 — and it MISSED `check test:` (two targets, one
+  // rule) and a target that arrives through `include`, handing the loop
+  // `make build` as its definition of done instead. `-n` runs nothing.
+  if (!onPath(runner)) return null;
+  return wanted.find((t) => {
+    try { execFileSync(runner, ['-n', t], { cwd: root, stdio: 'ignore' }); return true; } catch { return false; }
+  }) ?? null;
 }
-const makeCheck = () => { const t = recipeTarget('Makefile', WANTED); return t ? `make ${t}` : null; };
-const justCheck = () => { const t = recipeTarget('justfile', WANTED) ?? recipeTarget('Justfile', WANTED); return t ? `just ${t}` : null; };
+const makeCheck = () => { const t = recipeTarget('Makefile', WANTED, 'make'); return t ? `make ${t}` : null; };
+const justCheck = () => { const t = recipeTarget('justfile', WANTED, 'just') ?? recipeTarget('Justfile', WANTED, 'just'); return t ? `just ${t}` : null; };
 
 function pythonProject() {
   if (!has('pyproject.toml') && !has('setup.py') && !has('requirements.txt')) return null;
@@ -93,7 +153,12 @@ function pythonProject() {
   if (recipe) checks.push(recipe);
   if (/\[tool\.ruff/.test(toml)) checks.push('ruff check .');
   if (/\[tool\.mypy/.test(toml)) checks.push('mypy .');
-  if (/pytest/.test(toml) || has('tests') || has('test')) checks.push('pytest -q');
+  // Declared, or installed and actually used. `has('tests')` alone emitted
+  // `pytest -q` for a unittest project that had never heard of pytest.
+  const declaresPytest = /pytest/.test(toml) || has('pytest.ini') || has('tox.ini') || /pytest/.test(read('requirements.txt') ?? '');
+  if (declaresPytest && onPath('pytest')) checks.push('pytest -q');
+  else if (declaresPytest) checks.push('python -m pytest -q');
+  else if ((has('tests') || has('test')) && onPath('pytest')) checks.push('pytest -q');
   return { kind: 'python', checks, allScripts: [] };
 }
 
@@ -107,7 +172,13 @@ function genericProject() {
   if (has('build.gradle') || has('build.gradle.kts')) checks.push(has('gradlew') ? './gradlew check' : 'gradle check');
   if (has('pom.xml')) checks.push('mvn -q verify');
   if (glob(/\.(sln|csproj|fsproj)$/)) checks.push('dotnet test');
-  if (has('Gemfile')) checks.push(has('spec') ? 'bundle exec rspec' : has('Rakefile') ? 'bundle exec rake' : 'bundle exec ruby -Itest -e "Dir.glob(%q{test/**/*_test.rb}).each { |f| require File.expand_path(f) }"');
+  // NO fallback for a Gemfile with neither spec/ nor a Rakefile. The one that
+  // used to be here globbed `test/**/*_test.rb`, found nothing, required
+  // nothing and exited 0 — a definition of done that could not fail, on every
+  // iteration of every Jekyll site and every Ruby script. An honest «no check»
+  // is the whole point of this file.
+  if (has('Gemfile') && has('spec')) checks.push('bundle exec rspec');
+  else if (has('Gemfile') && has('Rakefile')) checks.push('bundle exec rake');
   if (has('mix.exs')) checks.push('mix test');
   const composer = parse('composer.json');
   if (composer) checks.push(...fromTaskMap(composer.scripts ?? {}, 'composer run').checks);
@@ -154,4 +225,4 @@ const signals = {
   dirty: (sh('git', ['status', '--porcelain']) ?? '').length > 0,
 };
 
-console.log(JSON.stringify({ root, project, memoryHomes, signals }, null, 2));
+console.log(JSON.stringify({ root, project, memoryHomes, signals, unreadable }, null, 2));

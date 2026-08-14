@@ -76,7 +76,8 @@ const readLog = () => {
   return raw.split('\n').filter(Boolean).flatMap((l) => {
     try {
       const row = JSON.parse(l);
-      if (row && typeof row === 'object') return [row];
+      // An ARRAY is an object to typeof, and printed as `[undefined] undefined`.
+      if (row && typeof row === 'object' && !Array.isArray(row)) return [row];
     } catch { /* fall through */ }
     skippedRows++;
     return [];
@@ -85,7 +86,12 @@ const readLog = () => {
 
 if (opts.status) {
   const rows = readLog();
-  if (!rows.length) { console.log('no iterations recorded yet.'); process.exitCode = 0; }
+  if (!rows.length) {
+    console.log(skippedRows
+      ? `no readable iterations — ${skippedRows} line(s) could not be parsed. A run was killed mid-append.`
+      : 'no iterations recorded yet.');
+    process.exitCode = 0;
+  }
   else {
     for (const r of rows.slice(-20)) {
       console.log(`[${String(r.n).padStart(3, '0')}] ${r.started}  ${String(r.seconds).padStart(5)}s  ` +
@@ -117,7 +123,18 @@ async function run() {
     return;
   }
   const ledger = homes[0];
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Interruptible. `stopping` was only consulted after the CHILD exited, so a
+  // Ctrl-C during the --sleep gap killed nothing (there is no child) and the
+  // loop started a fresh PAID agent — 15 seconds of every iteration by default.
+  let wake = null;
+  const sleep = (ms) => new Promise((r) => {
+    // The timer is CLEARED, not merely resolved past: a pending setTimeout keeps
+    // Node's event loop alive, so the loop stopped iterating on the signal and
+    // the process still sat there until the full gap had elapsed — which reads,
+    // to anyone watching, exactly like «Ctrl-C did nothing».
+    const t = setTimeout(r, ms);
+    wake = () => { clearTimeout(t); r(); };
+  });
 
   /** One lock for every shape of iteration — a carrier firing while you drive
    *  the loop by hand is two agents on one ledger, which is how a criterion
@@ -147,9 +164,24 @@ async function run() {
   let stopping = null;
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => {
+      if (stopping) {
+        // The SECOND one is «I mean it». Registering a handler removes Node's
+        // default terminate action, so without this an agent that ignores
+        // SIGTERM made the loop killable only by SIGKILL — which skips the
+        // exit handler and leaves the lock, which disables the carrier.
+        console.log(`\n■ ${sig} again — killing the agent and leaving now.`);
+        if (child) { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } }
+        release();
+        process.exit(130);
+      }
       stopping = sig;
-      if (child) child.kill('SIGTERM');
-      console.log(`\n■ ${sig} — stopping after this iteration. The agent was asked to stop too.`);
+      if (wake) wake();
+      // M2: the agent is its own process GROUP, so a compound `--agent`
+      // («a && b», which the docstring supports) does not leave the real agent
+      // orphaned and unsupervised when /bin/sh forks instead of exec'ing.
+      if (child) { try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); } }
+      console.log(`\n■ ${sig} — stopping after this iteration. The agent was asked to stop too.\n` +
+        `  Press ${sig === 'SIGINT' ? 'Ctrl-C' : 'it'} again to kill it now.`);
     });
   }
 
@@ -204,7 +236,9 @@ async function run() {
     // and all. Note what that means — the exit code recorded below is the LAST
     // command's if you pass a compound one. This is not the check (`prove.mjs`
     // is), it is the agent's own status.
-    child = spawn('/bin/sh', ['-c', opts.agent], { cwd: projectRoot, stdio: [steer ? 'pipe' : 'inherit', 'inherit', 'inherit'] });
+    // `detached` gives the agent its own process group, so a signal can reach
+    // every process a compound command started — not only the /bin/sh in front.
+    child = spawn('/bin/sh', ['-c', opts.agent], { cwd: projectRoot, detached: true, stdio: [steer ? 'pipe' : 'inherit', 'inherit', 'inherit'] });
     if (steer) { child.stdin.end(steer); }
     const exit = await new Promise((resolve) => {
       child.on('error', (err) => resolve(`spawn failed: ${err.code ?? err.message}`));
@@ -252,6 +286,12 @@ async function run() {
       return;
     }
     if (opts.sleep) await sleep(opts.sleep * 1000);
+    if (stopping) {
+      console.log(`\n■ ${stopping} — stopped between iterations.`);
+      append({ n, stopped: `signal ${stopping}` });
+      process.exitCode = 130;
+      return;
+    }
   }
   console.log(`\n■ --max reached. The goal is not the counter: read ${path.relative(root, ledger)}/goal.md and say where it stands.`);
   append({ n: readLog().length + 1, stopped: 'max iterations' });

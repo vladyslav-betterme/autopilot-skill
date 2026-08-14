@@ -236,7 +236,10 @@ export function takeLock(dir) {
       try {
         process.kill(pid, 0);      // still alive — a real holder
         return false;
-      } catch {
+      } catch (err) {
+        // EPERM means it EXISTS and belongs to someone else. Treating that as
+        // «gone» stole a live holder's lock.
+        if (err.code === 'EPERM') return false;
         // Gone. Reclaim once, then try again; if someone beat us to it, they hold it.
         try { fs.rmSync(dir, { recursive: true }); } catch { return false; }
       }
