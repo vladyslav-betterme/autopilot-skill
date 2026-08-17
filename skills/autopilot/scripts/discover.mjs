@@ -113,10 +113,16 @@ const onPath = (bin) => {
   try { execFileSync('command', ['-v', bin], { shell: '/bin/sh', stdio: 'ignore' }); return true; } catch { return false; }
 };
 
+/** The lockfile is the package manager, and BOTH the check line and the
+ *  readiness block below need the answer. Asked once. */
+const LOCKFILES = [['pnpm-lock.yaml', 'pnpm'], ['yarn.lock', 'yarn'], ['bun.lockb', 'bun'], ['package-lock.json', 'npm']];
+const lockfile = () => LOCKFILES.find(([f]) => has(f)) ?? null;
+const packageManager = () => lockfile()?.[1] ?? 'npm';
+
 function nodeProject() {
   const json = parse('package.json');
   if (!json) return null;
-  const pm = has('pnpm-lock.yaml') ? 'pnpm' : has('yarn.lock') ? 'yarn' : has('bun.lockb') ? 'bun' : 'npm';
+  const pm = packageManager();
   return { kind: 'node', packageManager: pm, ...fromTaskMap(json.scripts ?? {}, `${pm} run`) };
 }
 
@@ -279,4 +285,103 @@ const signals = {
   dirty: (sh('git', ['status', '--porcelain']) ?? '').length > 0,
 };
 
-console.log(JSON.stringify({ root, project, memoryHomes, signals, unreadable, missingTools, recipeUnverified }, null, 2));
+/**
+ * Is the WORKSHOP set up, or only the work?
+ *
+ * Every row here is a reason the project's own check goes red for a cause that
+ * has nothing to do with the goal — and an unattended loop reads that red as its
+ * own failure, then spends the campaign fixing code that was never broken. The
+ * expensive one is the last: a loop that cannot commit does every iteration's
+ * work and lands none of it, and `git commit` fails with a message nothing in
+ * the ledger ever shows.
+ *
+ * Facts and a command, never a verdict, and NOTHING is executed here — the
+ * commands are printed for whoever reads them to run, announced, in the order
+ * they appear. Read-only is the whole contract of this script.
+ */
+const readiness = [];
+{
+  const pkg = parse('package.json');
+  const declared = pkg ? Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length : 0;
+  const pm = packageManager();
+  const mtime = (p) => { try { return fs.statSync(path.join(root, p)).mtimeMs; } catch { return null; } };
+  if (declared && !has('node_modules')) {
+    readiness.push({
+      what: 'node dependencies are declared but not installed',
+      evidence: `package.json declares ${declared}, node_modules is absent`,
+      fix: lockfile() ? `${pm} ${pm === 'npm' ? 'ci' : 'install --frozen-lockfile'}` : `${pm} install`,
+    });
+  } else if (declared && lockfile()) {
+    const lock = mtime(lockfile()[0]);
+    const mods = mtime('node_modules');
+    if (lock && mods && lock > mods) {
+      readiness.push({
+        what: 'node_modules is older than the lockfile',
+        evidence: `${lockfile()[0]} changed after node_modules was last written`,
+        fix: `${pm} ${pm === 'npm' ? 'ci' : 'install --frozen-lockfile'}`,
+      });
+    }
+  }
+  // No verdict on python: deps can live in conda, in a global install, or in a
+  // venv somewhere else entirely. The FACTS, and the standard command.
+  if ((has('requirements.txt') || has('pyproject.toml')) && !has('.venv') && !has('venv') && !process.env.VIRTUAL_ENV) {
+    readiness.push({
+      what: 'a python project with no virtualenv in it and none active',
+      evidence: `${has('requirements.txt') ? 'requirements.txt' : 'pyproject.toml'} present, no .venv/ or venv/, $VIRTUAL_ENV unset — deps may still be global or in conda`,
+      fix: has('requirements.txt') ? 'python3 -m venv .venv && .venv/bin/pip install -r requirements.txt' : null,
+    });
+  }
+  /** KEY NAMES ONLY. A discovery step that printed the values of somebody's
+   *  `.env` would put live credentials into the ledger, the transcript and any
+   *  log the loop writes. */
+  const keys = (text) => [...String(text ?? '').matchAll(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/gm)].map((m) => m[1]);
+  const example = ['.env.example', '.env.sample'].find(has);
+  if (example && has('.env')) {
+    const missing = keys(read(example)).filter((k) => !keys(read('.env')).includes(k));
+    if (missing.length) {
+      readiness.push({
+        what: `.env is missing ${missing.length} key(s) that ${example} declares`,
+        evidence: `names only, never values: ${missing.join(', ')}`,
+        fix: null,
+      });
+    }
+  } else if (example && !has('.env')) {
+    readiness.push({ what: `${example} exists and .env does not`, evidence: 'nothing supplies the project\'s own configuration', fix: `cp ${example} .env  # then fill it in` });
+  }
+  /** A declared runtime nobody is running. `nvm use` on a project pinned to 18
+   *  is the difference between a real failure and «this ecosystem changed». */
+  const declaredNode = (read('.nvmrc') ?? '').trim()
+    || (/^nodejs\s+(\S+)/m.exec(read('.tool-versions') ?? '') ?? [])[1]
+    || pkg?.engines?.node || '';
+  /**
+   * A PIN, not a range. `engines: { node: ">=20.11" }` is satisfied by 22 and
+   * this row claimed a mismatch on the repo that ships this script — a
+   * readiness list whose first row is wrong is a list nobody reads. Deciding
+   * whether an arbitrary semver range is satisfied needs a semver parser, and
+   * this file has no dependencies, so it only speaks where the answer is
+   * certain: a bare `18`, `20.11.0`, `v22` — what `.nvmrc` and `.tool-versions`
+   * hold. Ranges are left to `npm`, which enforces them itself.
+   */
+  const pinned = /^v?\d+(\.\d+)*$/.test(declaredNode.trim()) ? declaredNode.trim().replace(/^v/, '') : '';
+  const wantMajor = pinned.split('.')[0];
+  const haveMajor = process.versions.node.split('.')[0];
+  if (wantMajor && wantMajor !== haveMajor) {
+    readiness.push({
+      what: 'the node this ran under is not the node the project declares',
+      evidence: `declared «${declaredNode.trim()}», running ${process.versions.node}`,
+      fix: has('.nvmrc') ? 'nvm use' : null,
+    });
+  }
+  if (signals.vcs === 'git') {
+    const who = [sh('git', ['config', 'user.name']), sh('git', ['config', 'user.email'])];
+    if (!who[0] || !who[1]) {
+      readiness.push({
+        what: 'git has no committer identity here — every commit this loop makes will FAIL',
+        evidence: `user.name=${who[0] ?? 'unset'} user.email=${who[1] ?? 'unset'}`,
+        fix: 'git config user.name "…" && git config user.email "…"',
+      });
+    }
+  }
+}
+
+console.log(JSON.stringify({ root, project, memoryHomes, signals, readiness, unreadable, missingTools, recipeUnverified }, null, 2));

@@ -36,16 +36,17 @@ identical for all of them. Only the **check** differs.
 flowchart LR
     subgraph setup["&nbsp;once per project&nbsp;"]
         direction TB
-        D["<b>discover</b> — the project's own<br/>check, homes, danger signals"]
-        S["<b>arm</b> — the skills this niche needs,<br/>and the tools it can reach"]
+        D["<b>discover</b> — the project's own check,<br/>homes, danger signals, what is unbuilt"]
+        F["<b>fix the workshop</b> — deps, env keys,<br/>identity, and the service it runs against"]
+        S["<b>arm</b> — the skills THIS task needs,<br/>and the reach it does not have yet"]
         G["<b>goal</b> — one falsifiable sentence,<br/>criteria someone else can check"]
-        D --> S --> G
+        D --> F --> S --> G
     end
 
     subgraph iter["&nbsp;every iteration&nbsp;"]
         direction TB
         P["<b>pick</b> an unmet criterion<br/><i>does it already exist?</i>"]
-        B["<b>build</b> the smallest thing<br/>that is actually correct"]
+        B["<b>build</b> the smallest thing that is<br/>correct — alone, or as parcels a<br/><b>crew</b> lands and you integrate"]
         C["<b>prove</b> — run the check,<br/>read the exit code yourself"]
         V["<b>verify</b> — a subagent that did<br/>not do the work, told to refute"]
         L["<b>land</b>, and confirm it landed"]
@@ -76,9 +77,9 @@ Run these once per project, from the project root. `<skill>` is where the skill
 landed — `.agents/skills/autopilot` after the install above.
 
 ```bash
-node <skill>/scripts/discover.mjs      # what «done» means here, and what is dangerous
+node <skill>/scripts/discover.mjs      # what «done» means here, what is dangerous, what is unbuilt
 node <skill>/scripts/bootstrap.mjs     # the ledger: goal · wins · failures · decisions · changelog
-node <skill>/scripts/skills.mjs        # the skill library — then install this project's niches
+node <skill>/scripts/skills.mjs --for "<the task, in words>"   # the skills THIS task needs
 node <skill>/scripts/tools.mjs         # what it can already REACH: MCP servers, plugins, and what nothing on disk knows
 ```
 
@@ -95,9 +96,21 @@ campaign — the skill fires on its own description.
 {
   "project":     { "kind": "node", "packageManager": "npm", "checks": ["npm run verify"] },
   "memoryHomes": ["CLAUDE.md", "docs/learnings", "CHANGELOG.md"],
-  "signals":     { "hasCI": true, "vcs": "git", "envFilesPresent": [".env.local"], "dirty": false }
+  "signals":     { "hasCI": true, "vcs": "git", "envFilesPresent": [".env.local"], "dirty": false },
+  "readiness":  [{ "what": "git has no committer identity here — every commit this loop makes will FAIL",
+                   "evidence": "user.name=unset user.email=unset",
+                   "fix": "git config user.name \"…\" && git config user.email \"…\"" }]
 }
 ```
+
+**`readiness` is the workshop, not the work** — dependencies declared and not
+installed, `node_modules` older than the lockfile, a python project with no
+virtualenv, keys `.env.example` declares and `.env` does not (names only: a
+credential must never reach a ledger or a transcript), a *pinned* runtime nobody
+is running, and git with no committer identity. Every row is a reason the check
+goes red for a cause that has nothing to do with the goal — and a loop that
+starts anyway books the environment's red as its own. Nothing here is executed;
+the commands are printed for whoever reads them to run.
 
 **`checks` is the definition of done for every iteration.** Node, Deno, Python,
 Rust, Go, Gradle, Maven, .NET, Ruby, Elixir, `Makefile` and `justfile` targets,
@@ -137,13 +150,32 @@ discovered, and when there is no command, it is still not an opinion:
 
 ## It arms itself, and it writes its own skills
 
-**Before iteration one** it installs what this project's niche needs, from a
-tagged shortlist of the best public skill sets:
+**Before iteration one** it staffs the task in front of it — one command, the
+task in words, three lanes ranked against it:
+
+```bash
+node <skill>/scripts/skills.mjs --for "migrate the billing schema to postgres"
+```
+
+1. **Already installed** — every skill in this project, in `$HOME` and in every
+   installed plugin. Free, because it is already loaded and already paid for. A
+   fourth skill for a job three installed ones do is the expensive mistake.
+2. **The catalogue** — the vetted shortlist below, addressed by tag.
+3. **[`affaan-m/ECC`](https://github.com/affaan-m/ECC)** — 285 community skills,
+   one at a time. Never its plugin: that installs all 285 descriptions onto every
+   turn, which is the rule below inverted.
+
+When nothing covers more than one word of the task it says **WEAK lead** and
+prints no install line, because installing on a coincidence is how a machine
+collects skills nobody chose. An unreachable index says *unavailable* — «I could
+not reach GitHub» is not «nothing matches», and a selector that cannot tell them
+apart turns an outage into a decision.
 
 ```bash
 node <skill>/scripts/skills.mjs                            # the catalogue and its tags
 node <skill>/scripts/skills.mjs --install any --dry-run    # the exact commands, run nothing
 node <skill>/scripts/skills.mjs --install react,perf,db    # this project's niches
+npx skills add affaan-m/ECC -s <one-skill> -y              # ECC, one skill at a time
 ```
 
 It refuses to install everything: every skill's description costs context on
@@ -156,7 +188,7 @@ reporting what the installed descriptions cost, what duplicates what, and what
 nothing has used. Uninstall follows from the report.
 
 <details>
-<summary><b>The eight sources it draws from</b></summary>
+<summary><b>The nine sources it draws from</b></summary>
 
 <br/>
 
@@ -170,9 +202,15 @@ nothing has used. Uninstall follows from the report.
 | [`supabase/agent-skills`](https://github.com/supabase/agent-skills) | Postgres and Supabase, including the security agents get wrong | `db` `sql` `backend` |
 | [`steipete/agent-scripts`](https://github.com/steipete/agent-scripts) | Native, browser, GitHub, release, infra — single skills only | `mac` `swift` `infra` `browser` |
 | [`vercel-labs/skills`](https://github.com/vercel-labs/skills) | The installer, and `find-skills` for a niche nothing covers | `skills` |
+| [`affaan-m/ECC`](https://github.com/affaan-m/ECC) | 285 community skills, selected by name against the task, installed one at a time — django, kotlin, homelab VLANs, healthcare compliance, trading-agent security | *selected by `--for`, not by tag* |
 
-Outside code and web the catalogue is thin, and it says so rather than
-pretending: `find-skills` is the entry point for anything it does not cover.
+The first eight are a vetted shortlist and are addressed by tag. ECC is the other
+trade — far more coverage at community quality — so it is selected per task, its
+descriptions are fetched for the shortlist only, and its risk rating (the
+installer prints one per skill) is there to be read rather than scrolled past.
+
+Outside code and web the vetted catalogue is thin, and it says so rather than
+pretending: `find-skills` is the entry point for anything nothing above covers.
 Everything it does install is third-party code that runs with your permissions —
 `--dry-run` first, then read what you added.
 
@@ -252,11 +290,12 @@ tool, continue after a restart» is a loop that stalled while producing a file.
 | [`SKILL.md`](skills/autopilot/SKILL.md) | The loop: the goal, the iteration, the check, the verification, the ledger, distillation, when to stop and ask, when to stop the loop. |
 | [`references/premise-check.md`](skills/autopilot/references/premise-check.md) | Check whether the thing already exists before building it. The highest-yield habit here — «two answers to one question» was 35 % of all defects in one campaign, and the only cause whose share *grew*. |
 | [`references/critics.md`](skills/autopilot/references/critics.md) | The review shape that produced reproductions instead of essays: one lens per hunter, one skeptic per finding, everyone read-only. |
+| [`references/crew.md`](skills/autopilot/references/crew.md) | Fanning the work out: what makes a parcel (its own check, its own files), the seven-field brief, and the integration — merge, hunt the duplicate helpers two agents just invented, run the **project's** whole check, then verify the seam with someone who did neither. |
 | [`references/ledger.md`](skills/autopilot/references/ledger.md) | The five files, and the admission bar that keeps each one worth reading. |
 | [`references/distillation.md`](skills/autopilot/references/distillation.md) | Turning a pattern that worked **three times** into a skill — and when to delete one. |
-| [`scripts/discover.mjs`](skills/autopilot/scripts/discover.mjs) | The project's own check, its memory homes, and the signals a loop must not trip — including whether version control exists at all. |
+| [`scripts/discover.mjs`](skills/autopilot/scripts/discover.mjs) | The project's own check, its memory homes, the signals a loop must not trip — including whether version control exists at all — and `readiness`: what about the **environment** is unbuilt, with the command for each. |
 | [`scripts/bootstrap.mjs`](skills/autopilot/scripts/bootstrap.mjs) | The ledger, in the project's **own** memory home, only what is missing. |
-| [`scripts/skills.mjs`](skills/autopilot/scripts/skills.mjs) | The skill library, tagged by niche. Installs on request, never wholesale. |
+| [`scripts/skills.mjs`](skills/autopilot/scripts/skills.mjs) | The skill library, tagged by niche — plus `--for "<task>"`, which ranks what is already installed, the catalogue, and ECC's 285 against one task, and refuses to print an install line for a coincidence. |
 | [`scripts/new-skill.mjs`](skills/autopilot/scripts/new-skill.mjs) | Write a skill from a win and link it where the harness actually loads from. |
 | [`references/tooling.md`](skills/autopilot/references/tooling.md) | The capability ladder — already reachable, the app's own CLI, a public server, then write one. Plus what a tool result is (untrusted input) and what a server costs (context, every turn). |
 | [`scripts/tools.mjs`](skills/autopilot/scripts/tools.mjs) | MCP servers and plugins across seven config surfaces — and the honest list of what nothing on disk can tell you. |
@@ -275,8 +314,15 @@ tool, continue after a restart» is a loop that stalled while producing a file.
   fix, run it, see red, restore. A guard that cannot fire is worse than none: it
   reads as proof the case is handled.
 - **Verification is not self-service.** At least one subagent that did not do the
-  work, read-only, told to refute — self-inflicted defects were 58–68 % of all
-  findings in the later rounds of one measured campaign.
+  work, read-only, told to refute — in every round of this campaign that
+  re-reviewed the previous round's repairs, most of the fatals found were *inside
+  those repairs*. Count it in [`docs/goal.md`](docs/goal.md)'s round table rather
+  than believing a percentage: the one that stood here («58–68 %») had no
+  measurement behind it, and an honesty auditor is what found that out.
+- **Fan out the work, then own the seam.** A parcel has its own check and its own
+  files or it is not a parcel; the integration — merging, hunting the duplicate
+  helpers two agents just invented for one job, running the *project's* whole
+  check — is the part that decides whether any of it lands.
 - **Never a second home for one kind of knowledge.** A second `CHANGELOG.md` is
   worse than none, because now neither is authoritative. The rule survives a
   rename: a project keeping `defect-patterns.md` never gets a `failures.md`.
@@ -340,8 +386,14 @@ It now goes red.
 - `bootstrap.mjs` looks for existing ledger files in `.`, `docs/`, `notes/` and
   `.github/`, one level below each. A ledger buried deeper is not seen; read the
   `left alone` line before accepting what it created.
-- `skills.mjs` shells out to `npx skills` for installs, so that one command needs
-  the network. Everything else is offline.
+- `skills.mjs` shells out to `npx skills` for installs, and `--for` fetches the
+  ECC index (one request, cached for a week under `~/.cache/autopilot`) plus a
+  description per shortlisted skill. Both name the network; everything else is
+  offline, and a failed fetch is reported as *unavailable*, never as «no match».
+- `--for` matches WORDS. It ranks a task written in the same language as the skill
+  descriptions — which is English for every source here — so a task written in
+  another language should carry its own nouns (`postgres`, `kubernetes`, `manim`)
+  or be restated for this one command.
 - `tools.mjs` reads config **files**. It cannot see connectors, cannot tell you
   whether a server starts, and does not know which tools one exposes — it says so
   in its own output rather than implying coverage it does not have.

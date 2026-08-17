@@ -55,6 +55,24 @@ export const LEDGER_HOMES = [
   'notes', 'docs', '.github', '.',
 ];
 
+/**
+ * Where a project's agent directories keep skills. Most specific first.
+ *
+ * ONE list, because it answers one question asked twice: `new-skill.mjs` links a
+ * written skill into every one of these, and `skills.mjs --for` reads every one
+ * of them to find what is already installed. Two lists would have meant a home
+ * an agent writes to and the inventory never looks at — «you have no skill for
+ * this» said over a directory holding exactly that skill.
+ */
+export const AGENT_SKILL_DIRS = [
+  '.claude/skills', '.codex/skills', '.gemini/skills', '.cursor/skills', '.opencode/skills',
+];
+
+/** The shared home `npx skills add` installs into, which the dirs above are
+ *  usually symlinks INTO. Listed apart because it is the write target, not a
+ *  per-harness link. */
+export const SHARED_SKILL_HOME = '.agents/skills';
+
 /** The file that halts an unattended run. One name, asked for in one place —
  *  a stop the loop has to REMEMBER to honour is not a stop. */
 export const STOP_FILE = 'STOP';

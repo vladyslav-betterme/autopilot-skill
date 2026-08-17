@@ -4,10 +4,13 @@ description: >-
   Use to run autonomous work on ANY project until a goal is actually met —
   «працюй автономно», «продовжуй», /loop, a Ralph-style loop, an unattended
   campaign, or setting a repo up so an agent can drive it. Code, documents,
-  data, research, infrastructure, ops: it discovers what «done» means here,
-  arms itself with the skills AND the reach the work needs (public skills, MCP
-  servers, plugins, connectors — writing the MCP server when none exists), and
-  iterates as a real process that stops on a STOP file, a budget or thrash.
+  data, research, infrastructure, ops: it works the way an outsourced team does
+  — repairs the environment it was handed, picks the skills THIS task needs
+  (already installed, catalogued, or one of ECC's 285), hands small parcels to
+  subagents and integrates their work itself. It discovers what «done» means
+  here, arms itself with the skills AND the reach the work needs (public skills,
+  MCP servers, plugins, connectors — writing the MCP server when none exists),
+  and iterates as a real process that stops on a STOP file, a budget or thrash.
   Steerable mid-flight, carryable by launchd or CI so it outlives the
   session, and on a full context it checkpoints into its ledger and compacts
   instead of stopping. Every check is run by something that is not writing the
@@ -37,9 +40,9 @@ after a CLI install, or wherever it was cloned. Run everything from the PROJECT
 root.
 
 ```bash
-node <skill>/scripts/discover.mjs        # checks, memory homes, danger signals
+node <skill>/scripts/discover.mjs        # checks, memory homes, danger signals, workshop readiness
 node <skill>/scripts/bootstrap.mjs       # creates the ledger if absent
-node <skill>/scripts/skills.mjs          # the skill library — pick this project's niches
+node <skill>/scripts/skills.mjs --for "<the task, in words>"   # the skills THIS task needs
 node <skill>/scripts/tools.mjs           # what this machine can already REACH: MCP servers, plugins
 ```
 
@@ -82,18 +85,72 @@ Read what discovery found before touching anything:
   green» has no meaning here and that is exactly when work is lost.
 - **`signals.dirty`** — uncommitted work is somebody's. Branch, never build on top.
 
-### Arm yourself before iteration one
+### The workshop before the work
 
-`skills.mjs` is the shortlist of public skills worth having, tagged by niche.
-The tags are the vocabulary — `any` and `review` on every project, then `web`,
-`react`, `db`, `docs`, `perf`, `a11y`, `mac`, `infra`, `research`, `design` as
-the project actually needs them.
+**`readiness`** is the part of discovery that is about the environment rather
+than the task: dependencies declared and not installed, `node_modules` older than
+the lockfile, a python project with no virtualenv, keys `.env.example` declares
+and `.env` does not (names only — never let a value reach a log), a pinned
+runtime nobody is running, and **git with no committer identity, which makes
+every commit this loop tries fail**. Each row carries the evidence and, where the
+answer is certain, the command.
+
+**Fix those FIRST, and fix them as work, not as a footnote.** A red baseline
+caused by an unbuilt workshop is not your iteration's fault — but a loop that
+starts anyway spends the campaign fixing code that was never broken, and books
+the environment's red as its own. So: run the printed commands (announced, in
+order — `npm ci` runs the project's install scripts, so it is somebody's code
+and §6 applies to anything metered or irreversible), then re-run the baseline and
+paste the new one into `goal.md` beside the old.
+
+**Then do the same for the SERVICE the work runs against**, which no file on disk
+can answer. `tools.mjs` lists what is configured; only a call tells you what is
+live. Before iteration one, exercise each service the goal depends on once,
+harmlessly — read one row, list one bucket, describe one project, `--version` the
+CLI — and write the result into `goal.md` as the workshop baseline. A server that
+is configured and dead reads exactly like «no such tool» (`references/tooling.md`,
+rung 0), and finding that out in iteration nine costs the whole run. What is
+misconfigured and yours to fix, fix; what needs a human (an OAuth flow, a key you
+do not have) is PARKED with both options and their costs, §6.
+
+Anything you repaired is worth a line in `decisions.md` — the next session
+inherits the workshop, and «why is this configured like that» is a question that
+otherwise gets answered by re-breaking it.
+
+### Arm yourself — for THIS task, not in general
+
+**A team that outsources does not hire generalists twice; it staffs the job in
+front of it.** So arming is per TASK, and the one command that answers it names
+the task in words:
+
+```bash
+node <skill>/scripts/skills.mjs --for "migrate the billing schema to postgres"
+```
+
+Three lanes, in the order you should spend from: **already installed** (this
+project, `$HOME`, every installed plugin — free, because it is already loaded and
+already paid for, and a fourth skill for a job three installed ones do is the
+expensive mistake); **the catalogue** below, by tag; then **ECC**
+(`affaan-m/ECC`) — 285 community skills reaching far past the catalogue, at
+community quality, **one at a time and never its plugin**, which would put all
+285 descriptions on every turn.
+
+Two things it deliberately will not do: it prints **no install line for a WEAK
+lead** — one shared word is a coincidence, and installing on one is how a machine
+collects skills nobody chose — and it reports an unreachable index as
+*unavailable*, because «I could not reach GitHub» is not «nothing matches», and a
+selector that cannot tell them apart turns an outage into a decision.
+
+The catalogue's own tags are the vocabulary — `any` and `review` on every
+project, then `web`, `react`, `db`, `docs`, `perf`, `a11y`, `mac`, `infra`,
+`research`, `design` as the project actually needs them:
 
 ```bash
 node <skill>/scripts/skills.mjs                            # the catalogue and its tags
 node <skill>/scripts/skills.mjs --install any --dry-run    # what it WOULD run
 node <skill>/scripts/skills.mjs --install any              # the always-useful set
 node <skill>/scripts/skills.mjs --install react,perf,db    # this project's niches
+npx skills add affaan-m/ECC -s <one-skill> -y              # ECC, one skill at a time
 ```
 
 **Choose, do not hoard.** Every installed skill's description is loaded on every
@@ -102,9 +159,11 @@ a model that skims.
 
 Installing is running third-party code with your permissions, so it is an
 announced act: `--dry-run` first, say what you are about to add and why, then
-install. If the project matches no niche in the catalogue, `any` alone is the
-correct answer — and `find-skills` is the entry point for a niche the catalogue
-is thin on (research, infra, data are thin today).
+install. **Read the SKILL.md before you install it** — that goes double for ECC,
+which is community-sourced and whose installer prints a per-skill risk rating
+worth reading rather than scrolling past. If the project matches no niche in the
+catalogue, `any` alone is the correct answer — and `find-skills` is the entry
+point for a niche nothing above covers.
 
 **Then measure what you just spent.** `skill-cleaner` comes with the `any` set
 and is how «choose, do not hoard» stops being advice:
@@ -213,6 +272,40 @@ their own path became one derived path; three `String.replace` stages in front
 of a whitelist became one scanner that tracks quote state; two functions
 answering «where does the state live» became one. The tell is that a fix keeps
 being correct and the next round keeps finding the stage before it.
+
+### 2b. The crew — parcels out, one integrator
+
+**When the criterion is bigger than one sitting, staff it instead of grinding
+it.** A team that takes an outsourced job does not put one person on everything;
+it cuts the work into pieces that can be done at the same time, and then somebody
+owns putting them back together. That second half is the part that gets skipped,
+and it is the part that decides whether any of it lands.
+
+- **Fan out only what is independent.** A parcel is a slice of a criterion with
+  **its own check** and **its own files**. Same file, two agents → a merge you
+  will do by hand, badly: split differently, use a worktree each, or run them in
+  series. Needs another parcel's RESULT → it is a sequence, not a fan-out.
+- **Three to five in flight is a crew.** Twenty is a queue with no integrator.
+- **Every brief carries all seven fields** — goal, scope, check, facts,
+  forbidden, return format, and what to do when blocked. The full template, and
+  the two ways a crew fails without looking like it is failing, are in
+  **`references/crew.md`; read it before you spawn the first one.**
+- **A subagent cannot ask.** It has no human on the other end, so a parcel that
+  meets a §6 decision must return `blocked: …` rather than decide. Say that in
+  the brief, every time, or «I improvised» stays available and silent.
+- **Their report is not evidence.** The parcel returns the check's own output,
+  pasted; a return with no output is a claim, and a claim is treated exactly as a
+  red result.
+- **Then YOU integrate**: merge, hunt the duplicate helpers two independent
+  agents just invented for one job, run the **project's whole check** — not the
+  parcels' — and write the one ledger entry yourself.
+- **And §3 still applies to the seam.** The verifier did neither the work nor the
+  integration, because the integration is where a crew's defects live.
+
+The same shape works for the parts of an iteration that are not building:
+several hunters with one lens each is exactly this, and it is what §3 already
+runs. What is never a parcel: the goal, the criteria, the ledger, anything
+metered or irreversible, and the verification of one's own work.
 
 **Prove.** Let something that is not writing the summary run the check and read
 its exit code — **`prove.mjs`, not the bare command.** Running it yourself in

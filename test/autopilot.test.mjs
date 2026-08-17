@@ -1697,6 +1697,150 @@ test('a body opening with a thematic break keeps its first section', () => {
   assert.equal(written.match(/^---$/gm).length, 4, 'the real frontmatter is still exactly one pair');
 });
 
+// ── the workshop, before the work ────────────────────────────────────────────
+
+const readiness = (d) => JSON.parse(run('discover.mjs', d)).readiness;
+
+test('dependencies declared and not installed is a workshop row, with the command', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ dependencies: { left: '1' } }));
+  fs.writeFileSync(path.join(d, 'package-lock.json'), '{}');
+  const rows = readiness(d);
+  const row = rows.find((r) => /not installed/.test(r.what));
+  assert.ok(row, JSON.stringify(rows));
+  // `npm ci` and not `npm install`: the lockfile is there, and a loop that
+  // resolves fresh versions has changed the project before iteration one.
+  assert.equal(row.fix, 'npm ci');
+});
+
+test('a missing .env key is reported by NAME, and the values never leave the file', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, '.env.example'), 'API_KEY=\nDB_URL=\n');
+  fs.writeFileSync(path.join(d, '.env'), 'API_KEY=live-secret-do-not-print\n');
+  const out = run('discover.mjs', d);
+  assert.match(out, /DB_URL/);
+  // The whole output, not just the row: discovery writes into the ledger and the
+  // transcript, and a credential that reaches either is out.
+  assert.ok(!out.includes('live-secret-do-not-print'), 'a .env VALUE reached the output');
+});
+
+test('a satisfied version RANGE is not a mismatch — the first row must not be a false one', () => {
+  const d = tmp();
+  // `>=20.11` running on 22 was reported as «the node this ran under is not the
+  // node the project declares», on the repo that ships this script.
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ engines: { node: '>=18' } }));
+  assert.equal(readiness(d).filter((r) => /node this ran under/.test(r.what)).length, 0);
+  // A PIN is a different claim, and this one cannot be satisfied by any current
+  // release, so the row is certain.
+  fs.writeFileSync(path.join(d, '.nvmrc'), '4\n');
+  assert.match(readiness(d).find((r) => /node this ran under/.test(r.what))?.evidence ?? '', /declared «4»/);
+});
+
+test('git with no committer identity is a row — every commit the loop makes would fail', { skip: !hasBin('git') }, () => {
+  const d = tmp();
+  execFileSync('git', ['init', '-q', '.'], { cwd: d });
+  execFileSync('git', ['config', 'user.email', ''], { cwd: d });
+  const row = readiness(d).find((r) => /committer identity/.test(r.what));
+  assert.ok(row, 'a loop that cannot commit does the work and lands none of it');
+  assert.match(row.fix, /git config user\.email/);
+});
+
+// ── selecting skills for ONE task ────────────────────────────────────────────
+
+/** An ECC index the test supplies, so nothing here touches the network: a local
+ *  path means «this file IS the index», and descriptions come from it. */
+const eccFile = (dir, skills) => {
+  const p = path.join(dir, 'ecc.json');
+  fs.writeFileSync(p, JSON.stringify(skills));
+  return p;
+};
+const forTask = (d, task, args = []) => run('skills.mjs', d, ['--for', task, ...args])
+  // eslint-disable-next-line no-control-regex
+  .replace(/\x1b\[[0-9;]*m/g, '');
+
+test('--for needs a task, and never combines with the lanes that install or print JSON', () => {
+  const d = tmp();
+  // A `--for` whose value went missing used to be a flag with no argument at
+  // all; selecting on nothing would have matched everything.
+  assert.throws(() => run('skills.mjs', d, ['--for']), /--for needs the task/);
+  assert.throws(() => run('skills.mjs', d, ['--for', '--install', 'any']), /--for needs the task/);
+  assert.throws(() => run('skills.mjs', d, ['--for', 'x y z', '--install', 'any']), /installs nothing/);
+  assert.throws(() => run('skills.mjs', d, ['--for', 'x y z', '--json']), /installs nothing/);
+  // Without a value this would have silently gone to the network instead.
+  assert.throws(() => run('skills.mjs', d, ['--for', 'x y z', '--ecc-index']), /needs a path or a URL/);
+});
+
+test('an ECC skill is selected for the task, one skill at a time — never the plugin', () => {
+  const d = tmp();
+  const index = eccFile(d, [
+    { name: 'manim-video', description: 'Build Manim explainer videos for technical concepts.' },
+    { name: 'perl-security', description: 'Taint mode, DBI parameterised queries, XSS.' },
+  ]);
+  const out = forTask(d, 'record a manim explainer video', ['--ecc-index', index]);
+  assert.match(out, /npx skills add affaan-m\/ECC -s manim-video -y/);
+  // The one-word coincidence must not reach the install line: `perl-security`
+  // for a video task is how a machine collects skills nobody chose.
+  assert.ok(!/-s perl-security/.test(out), out);
+  assert.ok(!/plugin install|marketplace add/.test(out), 'the 285-skill plugin is never the answer');
+});
+
+test('a weak lead is labelled and gets NO install line', () => {
+  const d = tmp();
+  // The overlap is one word, in the DESCRIPTION, and nothing in the name.
+  const index = eccFile(d, [{ name: 'perl-security', description: 'Taint mode, safe process execution, recording an audit trail.' }]);
+  const out = forTask(d, 'record an explainer video about kubernetes', ['--ecc-index', index]);
+  assert.match(out, /perl-security/, out);
+  assert.match(out, /WEAK/, out);
+  assert.ok(!/npx skills add/.test(out), `installing on a coincidence:\n${out}`);
+});
+
+test('one loud word in the NAME does not outrank a skill that covers the task', () => {
+  const d = tmp();
+  // The mutation this exists to kill: points alone. `security` in a name scores
+  // the same 3 whatever the task is, so the install line for a Supabase RLS job
+  // came back recommending `defi-amm-security`. COVERAGE is what separates them
+  // — three of the task's words against one — and a points-only floor let the
+  // one-word match through at full volume.
+  const index = eccFile(d, [
+    { name: 'postgres-patterns', description: 'Query optimisation, schema design, indexing and security. Based on Supabase best practices.' },
+    { name: 'defi-amm-security', description: 'Reentrancy, CEI ordering, oracle manipulation in Solidity AMMs.' },
+  ]);
+  const out = forTask(d, 'harden the postgres row level security for our supabase billing tables', ['--ecc-index', index]);
+  assert.match(out, /-s postgres-patterns/, out);
+  assert.ok(!/defi-amm-security/.test(out), `a one-word coincidence in the shortlist:\n${out}`);
+});
+
+test('an unreachable index says so — «offline» is not «nothing matches»', () => {
+  const d = tmp();
+  const out = forTask(d, 'record a manim explainer video', ['--ecc-index', path.join(d, 'nope.json')]);
+  assert.match(out, /index unavailable/);
+  assert.match(out, /NOT «no ECC skill matches»/);
+  assert.ok(!/npx skills add/.test(out), 'an outage must not print an install line either');
+});
+
+test('a skill installed in three places is ONE row, and its folded description is read', () => {
+  const d = tmp();
+  const write = (dir) => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'SKILL.md'),
+      '---\nname: kafka-rebalance\ndescription: >-\n  Rebalance kafka partitions\n  without downtime.\nmetadata:\n  origin: local\n---\n\n# body\n');
+  };
+  // Two ways one capability shows up twice, and they need two different
+  // defences: the SYMLINK `npx skills add` leaves behind (same file, caught by
+  // realpath) and a genuine SECOND COPY, which is what two installed plugin
+  // versions of one skill are (different files, same name — caught by name).
+  const real = path.join(d, '.agents', 'skills', 'kafka-rebalance');
+  write(real);
+  write(path.join(d, '.codex', 'skills', 'kafka-rebalance'));
+  fs.mkdirSync(path.join(d, '.claude', 'skills'), { recursive: true });
+  fs.symlinkSync(real, path.join(d, '.claude', 'skills', 'kafka-rebalance'));
+  const out = forTask(d, 'rebalance the kafka partitions', ['--ecc-index', eccFile(d, [])]);
+  assert.equal(out.match(/^ {2}kafka-rebalance /gm)?.length, 1, out);
+  // The block scalar is the shape every catalogued skill actually uses.
+  assert.match(out, /Rebalance kafka partitions without downtime\./);
+  assert.match(out, /\+2 more copies/);
+});
+
 test('the context-budget audit ships with the always-useful set', () => {
   // «Choose, do not hoard» is advice until something counts. skill-cleaner is
   // what counts, so it cannot be a niche extra: the loop only ever ADDS skills,

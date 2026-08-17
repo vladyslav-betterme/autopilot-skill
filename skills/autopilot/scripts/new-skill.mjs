@@ -15,6 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { AGENT_SKILL_DIRS, SHARED_SKILL_HOME } from './lib.mjs';
 
 const root = process.cwd();
 const argv = process.argv.slice(2);
@@ -39,15 +40,17 @@ if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) die(`bad skill name «${name}» — lowe
 // instead of when to use it never fires, and an unfired skill is just a file.
 if (description.length < 40) die('description too short — name the situations and the words that should summon it');
 
-/** Where skills live here. `.agents/skills` is the shared home the installer
- *  uses; a project that only has `.claude/skills` keeps using that. */
-const AGENT_DIRS = ['.claude/skills', '.codex/skills', '.gemini/skills', '.cursor/skills', '.opencode/skills'];
+/** Where skills live here — the list lives in lib.mjs, because `skills.mjs
+ *  --for` reads the same directories to say what is already installed.
+ *  `.agents/skills` is the shared home the installer uses; a project that only
+ *  has `.claude/skills` keeps using that. */
+const AGENT_DIRS = AGENT_SKILL_DIRS;
 /** lstat, not existsSync: a DANGLING symlink «does not exist» to existsSync,
  *  passed the conflict check, and then made the symlink step throw EEXIST after
  *  the file had already been written — a half-created skill, exit 1. */
 const exists = (p) => { try { fs.lstatSync(path.join(root, p)); return true; } catch { return false; } };
-const home = exists('.agents/skills') ? '.agents/skills'
-  : AGENT_DIRS.find(exists) ?? '.agents/skills';
+const home = exists(SHARED_SKILL_HOME) ? SHARED_SKILL_HOME
+  : AGENT_DIRS.find(exists) ?? SHARED_SKILL_HOME;
 
 /**
  * The elected home must be INSIDE the project. `new-mcp.mjs` got this check;
@@ -64,7 +67,7 @@ if (homeReal !== rootReal && !homeReal.startsWith(rootReal + path.sep)) {
     'Refusing: a skill written there is loaded in every future session, on every project.');
 }
 
-const conflicts = ['.agents/skills', ...AGENT_DIRS].filter((d) => exists(path.join(d, name)));
+const conflicts = [SHARED_SKILL_HOME, ...AGENT_DIRS].filter((d) => exists(path.join(d, name)));
 if (conflicts.length) {
   die(`«${name}» already exists in ${conflicts.join(', ')} — extend it, or pick a different name.\n` +
     'A second skill for one job is the same defect as a second changelog.');

@@ -51,6 +51,17 @@ const RUNS = [
   { script: 'bootstrap.mjs', args: [] },
   { script: 'skills.mjs', args: [] },
   { script: 'skills.mjs', args: ['--install', 'any', '--dry-run'] },
+  /** The per-task selector. `args` may be a function so a row can lay down the
+   *  file it needs — here a local ECC index, which keeps the oracle offline:
+   *  every other row in this list runs without a network and this one must too. */
+  {
+    script: 'skills.mjs',
+    args: (d) => {
+      fs.writeFileSync(path.join(d, 'ecc.json'),
+        JSON.stringify([{ name: 'postgres-patterns', description: 'Indexing, schema design and query optimisation for postgres.' }]));
+      return ['--for', 'add a postgres index for the billing table', '--ecc-index', 'ecc.json'];
+    },
+  },
   { script: 'tools.mjs', args: [] },
   { script: 'prove.mjs', args: ['--', 'true'] },
   { script: 'prove.mjs', args: [] },                       // the usage line
@@ -69,10 +80,11 @@ test('nothing any script prints is a placeholder, a dead path, or a flag it refu
   const broken = [];
   for (const { script, args } of RUNS) {
     const d = fixture();
-    const res = spawnSync('node', [path.join(SCRIPTS, script), ...args],
+    const argv = typeof args === 'function' ? args(d) : args;
+    const res = spawnSync('node', [path.join(SCRIPTS, script), ...argv],
       { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const printed = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
-    const where = `${script} ${args.join(' ')}`.trim();
+    const where = `${script} ${argv.join(' ')}`.trim();
 
     // 1. An unsubstituted placeholder OUTSIDE a usage line. In `usage: … <name>`
     //    it means «put a name here» and is correct; in «next: run this» it is a

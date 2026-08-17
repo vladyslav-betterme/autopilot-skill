@@ -4,6 +4,32 @@ What shipped, newest first. One line per landed change: what it does, and what
 was wrong before. **Newest first** — it read oldest-first once and a cold-start
 drill named the oldest change as the most recent thing that landed.
 
+- **the crew, the workshop, and arming per TASK** — three additions that make the
+  loop behave the way an outsourced team does, rather than a solo agent with a
+  catalogue. **Arming is per task**: `skills.mjs --for "<the task>"` ranks what is
+  already installed (project, `$HOME`, every installed plugin — one row per name,
+  because two plugin versions of one skill were three rows and one capability),
+  the vetted catalogue by tag, and **`affaan-m/ECC`'s 285 community skills** one
+  at a time — never its plugin, which would put 285 descriptions on every turn.
+  A one-word coincidence is labelled `WEAK` and gets **no install line** (a
+  Supabase RLS task's first shortlist recommended `defi-amm-security`, on the
+  word «security» alone: coverage, not points, is what tells them apart), and an
+  unreachable index reports *unavailable* rather than «nothing matches».
+  **The workshop before the work**: `discover.mjs` gained `readiness` — deps
+  declared and not installed, `node_modules` older than the lockfile, no
+  virtualenv, keys `.env.example` declares and `.env` does not (names only,
+  asserted by a test that greps the whole output for the value), a *pinned*
+  runtime nobody is running, and **git with no committer identity, which makes
+  every commit the loop tries fail**. Still read-only: it prints commands and
+  runs none. **And the crew**: `references/crew.md` plus SKILL.md §2b — a parcel
+  has its own check and its own files, the brief carries all seven fields
+  including what to do when blocked (a subagent cannot ask), a return with no
+  check output is a claim and is treated as red, and the integrator merges, hunts
+  the duplicate helpers two agents just invented for one job, runs the
+  **project's** whole check, and hands the seam to §3. Two of the three new
+  guards' first tests could not fail — both mutants survived until the mutation
+  was actually run; `docs/failures.md`'s «guard that cannot be reached by the
+  oracle that certifies it» row now counts them.
 - **11f9fbf** — the lock is built COMPLETE and moved into place in one `rename`, so it is never observable without its pid: the two-syscall create had thrown ENOENT out of `takeLock` and left pidless residue that every later run refused **forever** — a daemon reporting success and never invoking the agent. The emitted wrapper, which is the copy that pays, got the same three defences (it was still overlapping 20 trials in 20). Plus **eight guards for eight mutations that had survived all 161 tests** — three of them money — and a fix to the lock oracle itself, which counted winners instead of overlapping intervals and was red 2 runs in 11 against correct code.
 - **331b8ab** — the lock, properly. Round 7's atomic `rename` was still not enough: «is this pid dead» and «remove its directory» are two steps, so under load eight racers produced **three to six simultaneous holders** — the oracle caught its own commit's fix. The claim is now the PID FILE, verified after a settle, so at most one holder survives however the syscalls interleave. Landed with round 8's honesty audit (§7 proved its stopping rule reachable with a series that matched the counter on no round; «four stopping conditions» where there are five; an undocumented 45-minute kill; STEERING arriving demoted with `--steer` unmentioned; two percentages derivable from nothing) and cold-start drill 5's thirteen ledger repairs.
 - **595ca1c** — the lock is mutually exclusive. Reclaiming a stale one was `rmSync`+`mkdirSync`, two syscalls, so two processes both held it and **both paid agents ran** (1 contended start in 150, measured); now one atomic `rename`. With it: `releaseLock` checks it still owns the lock, the emitted wrapper stops stealing in three states `takeLock` refuses, a timed-out iteration stops SIGKILLing the NEXT one, `--timeout` refuses what `setTimeout` cannot represent, and a day-of-month cron step is refused because it fires 23 times a year, not 13.

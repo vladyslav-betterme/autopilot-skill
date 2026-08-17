@@ -61,7 +61,7 @@ inventing a direction.
 | **The tested copy of a rule and the copy that RUNS are different files** — «EPERM counts as alive» was true of `lib.mjs` and false of the shell line the carrier emits | 1 | R7 |
 | **One step made atomic, while the RACE spans two** — `rename` is atomic, but «is this holder dead» and «remove its lock» are still two steps, and a competitor reclaims in between | 1 | R8 |
 | **An enumeration that is a claim of exhaustiveness, counted from memory** — «four stopping conditions» with five in the code; «the default cadence» naming one number where three mechanisms have three | 2 | R8 |
-| **A guard that cannot be reached by the oracle that certifies it** — eight mutations survived all 161 tests, including a deleted process-substitution clause, a launchd interval in the wrong unit, and three config readers whose absence is the round-1 false-absence fatal | 8 | R8 |
+| **A guard that cannot be reached by the oracle that certifies it** — eight mutations survived all 161 tests, including a deleted process-substitution clause, a launchd interval in the wrong unit, and three config readers whose absence is the round-1 false-absence fatal. **+2 in the task-selector work**: a test named «one row for a skill installed twice» set up a SYMLINK, so it proved the realpath dedupe and passed with the name dedupe deleted; a test named «a weak lead gets no install line» used a one-point description hit, so it proved the points floor and passed with the coverage floor deleted. Both were found by running the mutation, not by reading the test | 10 | R8 |
 | **A number that cannot be honoured, accepted as if it were** — `--timeout 40000` overflowed `setTimeout` and fired after 1 ms, so a very long timeout became no timeout | 1 | R7 |
 
 ## Patterns
