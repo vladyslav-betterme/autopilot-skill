@@ -4,7 +4,7 @@ What shipped, newest first. One line per landed change: what it does, and what
 was wrong before. **Newest first** — it read oldest-first once and a cold-start
 drill named the oldest change as the most recent thing that landed.
 
-- **the crew, the workshop, and arming per TASK** — three additions that make the
+- **ba7de00 · the crew, the workshop, and arming per TASK** — three additions that make the
   loop behave the way an outsourced team does, rather than a solo agent with a
   catalogue. **Arming is per task**: `skills.mjs --for "<the task>"` ranks what is
   already installed (project, `$HOME`, every installed plugin — one row per name,
